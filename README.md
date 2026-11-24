@@ -1,2 +1,2 @@
 # CSVisualizer
-Visualize CSV from FR24 on FAA chart
+Visualize CSV/KML from FR24/FlightAware on FAA chart
