@@ -78,7 +78,7 @@
         transition:opacity .25s ease, visibility .25s ease;
       }
       body.ui-hidden .panel{ opacity:0; visibility:hidden; pointer-events:none; }
-      body.ui-hidden #settingsToggle{ opacity:0; visibility:hidden; pointer-events:none; }
+      body.ui-hidden #settingsToggle, body.ui-hidden #flightsToggle{ opacity:0; visibility:hidden; pointer-events:none; }
       #showUiBtn{
         position:fixed; right:14px; bottom:14px; z-index:70;
         display:none; align-items:center; gap:7px;
@@ -130,8 +130,11 @@
       #clockOnlyBtn:hover{ color:var(--text); border-color:var(--accent); }
       #bigClock{ position:fixed; }
 
-      /* Left: flights */
-      #flightsPanel{ left:14px; top:14px; width:316px; padding:14px; max-height:calc(100dvh - 208px); overflow-y:auto; }
+      /* Left: flights. Its z-index sits ABOVE the Clock HUD (40):
+         on phones the panel's top-left corner overlaps the
+         frame-top HUD, and the panel must stay visible and
+         tappable there instead of sliding underneath it. */
+      #flightsPanel{ left:14px; top:14px; width:316px; padding:14px; max-height:calc(100dvh - 208px); overflow-y:auto; z-index:50; }
       #dropzone{
         border:1.5px dashed var(--line-strong); border-radius:12px;
         padding:16px 12px; text-align:center; cursor:pointer;
@@ -312,6 +315,7 @@
       #bigClock.live-rec-hidden{ display:none !important; }
 
       #settingsToggle{ display:none; }
+      #flightsToggle{ display:none; }
 
       #installBtn.ready{ border-color:var(--accent); color:var(--accent); }
       #modalOverlay{
@@ -411,14 +415,30 @@
         #screenRecBar{ bottom:calc(var(--th, 150px) + 12px); }
       }
       @media (max-width: 720px){
-        #flightsPanel{ left:10px; top:10px; width:min(300px, calc(100vw - 108px)); padding:11px; max-height:36dvh; }
+        /* Small screens: the Flight Lists panel collapses into a
+           small icon button at the top-left (like the Settings
+           gear at the top-right); the panel itself only appears
+           below that button while it is open. On wide screens the
+           toggle stays hidden and the panel is always shown. */
+        #flightsPanel{ display:none; left:10px; top:62px; width:min(300px, calc(100vw - 108px)); padding:11px; max-height:36dvh; }
+        #flightsPanel.open{ display:block; }
         #flightsPanel .hint{ display:none; }
+        #flightsToggle{
+          display:flex; position:fixed; left:10px; top:10px; z-index:56;
+          width:44px; height:44px; min-height:44px; border-radius:12px;
+          background:var(--panel); border:1px solid var(--line-strong); color:var(--text);
+          align-items:center; justify-content:center; cursor:pointer;
+          backdrop-filter:blur(14px);
+        }
         #dropzone{ padding:10px; }
         #dropzone svg{ width:22px; height:22px; margin-bottom:4px; }
         #settingsPanel{ display:none; right:10px; top:10px; width:min(264px, calc(100vw - 20px)); max-height:60dvh; overflow-y:auto; }
         #settingsPanel.open{ display:block; }
         #settingsToggle{
-          display:flex; position:fixed; right:10px; top:10px; z-index:30;
+          /* z-index above the Clock HUD (40), same as the Flight
+             Lists toggle, so the gear stays visible and tappable
+             on phones instead of sliding behind the HUD. */
+          display:flex; position:fixed; right:10px; top:10px; z-index:56;
           width:44px; height:44px; min-height:44px; border-radius:12px;
           background:var(--panel); border:1px solid var(--line-strong); color:var(--text);
           align-items:center; justify-content:center; cursor:pointer;
@@ -513,6 +533,10 @@
         <span class="kv"><span class="lab">LOCAL</span><b id="bcLocal">—</b></span>
       </div>
     </section>
+
+    <button id="flightsToggle" type="button" aria-label="Toggle flight list" aria-expanded="false" aria-controls="flightsPanel">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0 4 4m-4-4L8 8"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+    </button>
 
     <!-- Flights / upload -->
     <section class="panel" id="flightsPanel" aria-label="Flight data">
@@ -9789,6 +9813,19 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       if (typeof panelState !== 'undefined' && !panelState.settings) setPanelVisible('settings', true);
       document.getElementById('settingsPanel').classList.toggle('open');
     });
+    document.getElementById('flightsToggle').addEventListener('click', function(){
+      var panel = document.getElementById('flightsPanel');
+      if (typeof panelState !== 'undefined' && !panelState.flights){
+        /* The panel was hidden from its x button / the View menu:
+           bring it back already open. */
+        setPanelVisible('flights', true);
+        panel.classList.add('open');
+        this.setAttribute('aria-expanded', 'true');
+        return;
+      }
+      var nowOpen = panel.classList.toggle('open');
+      this.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
+    });
 
     /* ---------------- Clock-only (time only) toggle ---------------- */
     function setClockOnly(on){
@@ -9806,7 +9843,11 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
     function setUiHidden(hidden){
       state.uiHidden = !!hidden;
       document.body.classList.toggle('ui-hidden', state.uiHidden);
-      if (state.uiHidden) document.getElementById('settingsPanel').classList.remove('open');
+      if (state.uiHidden){
+        document.getElementById('settingsPanel').classList.remove('open');
+        document.getElementById('flightsPanel').classList.remove('open');
+        document.getElementById('flightsToggle').setAttribute('aria-expanded', 'false');
+      }
     }
 
     /* ---------------- Per-panel show / hide ----------------
