@@ -541,6 +541,7 @@
       <div class="seg" id="layerSeg" role="group" aria-label="Map layer">
         <button type="button" data-layer="vfr" class="on">VFR Sectional</button>
         <button type="button" data-layer="ifr">IFR Enroute Low</button>
+        <button type="button" data-layer="map">Map</button>
       </div>
       <h2 style="margin-top:14px">Frame Aspect</h2>
       <div class="seg" id="aspectSeg" role="group" aria-label="Frame aspect ratio">
@@ -640,6 +641,7 @@
         <select class="sel" id="kfLayer">
           <option value="vfr">VFR Sectional</option>
           <option value="ifr">IFR Enroute Low</option>
+          <option value="map">Map</option>
         </select>
       </div>
       <div class="ctl">
@@ -8199,10 +8201,12 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       );
     }
 
-    /* ---------------- Map tile mosaic (FAA charts only) ----------------
-       The area-map ground is a real FAA chart mosaic drawn on a canvas and
-       used as the texture of the 3D ground plane. No satellite imagery is
-       used at all. All tile images are fetched first and only then drawn,
+    /* ---------------- Map tile mosaic (FAA charts + street map) ----------------
+       The area-map ground is a real map mosaic drawn on a canvas and
+       used as the texture of the 3D ground plane: an FAA chart (VFR
+       Sectional / IFR Enroute Low) or the OpenStreetMap street map,
+       selectable as layers. No satellite imagery is used at all. All
+       tile images are fetched first and only then drawn,
        in a fixed order, so a slow tile can never paint over the chart
        (the previous version drew tiles in load-completion order, which let
        the satellite base overwrite the chart and made the ground look like
@@ -8290,8 +8294,10 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
          without cropping. IFR_AreaLow serves real tiles only up to z11
          (z12 is blank transparent PNGs) while VFR_Sectional goes to
          z12, so the cap is per layer; blank-tile detection is the
-         second line of defense. */
-      var zMax = layer === 'ifr' ? 11 : 12;
+         second line of defense. The street-map layer (OpenStreetMap)
+         is served up to z19 and is capped at z14 so street names stay
+         legible under the follow cameras. */
+      var zMax = layer === 'ifr' ? 11 : (layer === 'map' ? 14 : 12);
       var zMin = layer === 'ifr' ? 7 : 8;
       var zc = zMax;
       var chartRange = tileRange(pb, zc);
@@ -8323,8 +8329,8 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       function drawTile(img, px, py, size){
         if (img) ctx.drawImage(img, px - ox, py - oy, size, size);
       }
-      var primary = layer === 'ifr' ? ['ifr', 'enrl'] : ['vfr'];
-      var secondary = layer === 'ifr' ? ['vfr'] : ['ifr', 'enrl'];
+      var primary = layer === 'ifr' ? ['ifr', 'enrl'] : (layer === 'map' ? ['osm'] : ['vfr']);
+      var secondary = layer === 'ifr' ? ['vfr'] : (layer === 'map' ? [] : ['ifr', 'enrl']);
       var tiles = [];
       for (var cx2 = chartRange.x0; cx2 <= chartRange.x1; cx2++){
         for (var cy2 = chartRange.y0; cy2 <= chartRange.y1; cy2++){
@@ -8436,18 +8442,19 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       mosaicPending[key] = p;
       return p;
     }
-    /* Preload BOTH chart layers for the current flight area in the
+    /* Preload every map layer for the current flight area in the
        background. Whichever layer is not on screen is fetched while
-       the user watches the other one, so switching VFR <-> IFR later
+       the user watches the other one, so switching layers later
        never has to wait for tiles — and never flashes the bare blue
        ground that used to show while the new chart loaded. */
     function preloadChartLayers(){
       if (!localFrame) return;
-      ['vfr', 'ifr'].forEach(function(layer){
+      ['vfr', 'ifr', 'map'].forEach(function(layer){
         ensureMosaic(layer).catch(function(){ /* background preload: failures surface on switch */ });
       });
     }
     function chartStatusFor(res, layer){
+      if (layer === 'map'){ updateCredit(); return; }
       if (res && res.stats && res.stats.chartTried > 0 && res.stats.chartLoaded === 0)
         setLayerStatus('Areas without chart coverage are filled with a street map');
       else if (res && res.stats && res.stats.fallbackLoaded > 0)
@@ -8456,7 +8463,8 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
     }
     var LAYER_INFO = {
       vfr: { status: 'Map: FAA VFR Sectional (chart only)', credit: 'Source: FAA VFR Sectional Charts (ArcGIS) / OpenStreetMap only outside chart coverage' },
-      ifr: { status: 'Map: FAA IFR Enroute Low (chart only)', credit: 'Source: FAA IFR Enroute Low (ArcGIS IFR_AreaLow) / ChartBundle / OpenStreetMap only outside chart coverage' }
+      ifr: { status: 'Map: FAA IFR Enroute Low (chart only)', credit: 'Source: FAA IFR Enroute Low (ArcGIS IFR_AreaLow) / ChartBundle / OpenStreetMap only outside chart coverage' },
+      map: { status: 'Map: OpenStreetMap', credit: '© OpenStreetMap contributors' }
     };
     function setLayerStatus(txt){ document.getElementById('layerStatus').textContent = txt; }
     function updateCredit(){
@@ -9583,7 +9591,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       crossed.forEach(function(x){ applyKeyframe(x.k); });
     }
     var CAM_LABELS = { follow:'Follow', south:'From South', chase:'Chase', orbit:'Orbit', topdown:'Top-Down', overview:'Overview', free:'Free' };
-    var LAYER_LABELS = { vfr:'VFR Sectional', ifr:'IFR Enroute Low' };
+    var LAYER_LABELS = { vfr:'VFR Sectional', ifr:'IFR Enroute Low', map:'Map' };
     function renderKfFlightOptions(){
       var sel = document.getElementById('kfFlight');
       if (!sel) return;
