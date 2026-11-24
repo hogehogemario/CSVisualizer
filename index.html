@@ -120,14 +120,6 @@
       #bigClock .kv{ font-size:12.5px; color:var(--muted); }
       #bigClock .kv b{ color:var(--text); font-family:"JetBrains Mono",monospace; font-weight:700; }
       #bigClock .kv .lab{ font-family:"JetBrains Mono",monospace; font-size:11px; font-weight:700; letter-spacing:.14em; color:#b8bec7; margin-right:4px; }
-      #bigClock.clock-only .sub{ display:none; }
-      #clockOnlyBtn{
-        pointer-events:auto; position:absolute; top:6px; right:8px;
-        min-height:24px; padding:0 9px; border-radius:999px;
-        background:transparent; border:1px solid var(--line); color:var(--muted);
-        font-size:10.5px; font-weight:700; cursor:pointer; line-height:1;
-      }
-      #clockOnlyBtn:hover{ color:var(--text); border-color:var(--accent); }
       #bigClock{ position:fixed; }
 
       /* Left: flights. Its z-index sits ABOVE the Clock HUD (40):
@@ -222,7 +214,6 @@
         border-radius:8px; padding:0 7px; font-size:12.5px; min-height:36px;
       }
       .speed-num:focus{ border-color:var(--accent); outline:none; }
-      .dur-presets{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
       #fullRouteControls{ border-left:2px solid var(--line); padding-left:10px; margin-left:2px; }
 
       /* Stats readout */
@@ -367,15 +358,6 @@
       }
       .panel-close:hover{ color:var(--text); border-color:var(--line-strong); background:#132539; }
       #transport{ padding-right:46px; }
-      .psec{ position:relative; }
-      .psec-close{
-        position:absolute; top:12px; right:0; z-index:6;
-        width:24px; height:24px; min-height:24px; padding:0; border-radius:7px;
-        border:1px solid transparent; background:transparent; color:var(--muted);
-        cursor:pointer; line-height:1; font-size:14px;
-        display:flex; align-items:center; justify-content:center;
-      }
-      .psec-close:hover{ color:var(--text); border-color:var(--line-strong); background:#132539; }
       /* Pull tabs: when a panel is closed with its x button, a
          small tab stays on the screen edge nearest the panel's
          home position (Flight List: top-left edge, Settings:
@@ -396,17 +378,6 @@
       #tabFlights{ left:0; top:14px; writing-mode:vertical-rl; border-left:0; border-radius:0 10px 10px 0; }
       #tabSettings{ right:0; top:14px; writing-mode:vertical-rl; border-right:0; border-radius:10px 0 0 10px; }
       #tabTransport{ left:50%; transform:translateX(-50%); bottom:0; border-bottom:0; border-radius:10px 10px 0 0; padding:7px 16px; min-height:36px; }
-      /* Restore strip left inside Settings where a closed section
-         (Camera / Timeline Keyframes) used to be. */
-      .psec-restore{
-        display:none; width:100%; margin-top:14px; text-align:left;
-        background:#0b1727; border:1px dashed var(--line-strong); border-radius:9px;
-        color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.14em;
-        text-transform:uppercase; padding:8px 10px; cursor:pointer; min-height:34px;
-      }
-      .psec-restore.show{ display:block; }
-      .psec-restore:hover{ color:var(--accent); border-color:var(--accent); }
-      .psec-off{ display:none !important; }
       /* Below desktop width the Clock HUD STAYS fixed to the top of
          the frame (it never docks above the transport bar); only its
          padding and type shrink a little. The toast and the
@@ -457,16 +428,14 @@
            rows, still fixed to the top of the frame (via
            --frame-top), wide enough that the sub row (callsign /
            ALT / SPD / LOCAL) stays on one line on a typical phone,
-           and never wider than the frame itself. The date row
-           keeps clear of the Time Only button parked in the HUD's
-           top-right corner. On very narrow screens the sub row
-           wraps instead of overflowing. */
+           and never wider than the frame itself. On very narrow
+           screens the sub row wraps instead of overflowing. */
         #bigClock{
           min-width:0;
           width:auto; max-width:min(calc(100vw - 16px), calc(var(--frame-w, 100vw) - 12px));
           padding:7px 12px 8px;
         }
-        #bigClock .date{ font-size:10px; letter-spacing:.14em; padding-right:74px; }
+        #bigClock .date{ font-size:10px; letter-spacing:.14em; }
         #bigClock .time{ font-size:21px; }
         #bigClock .time small{ font-size:11px; }
         #bigClock .sub{ gap:5px 7px; margin-top:1px; }
@@ -474,7 +443,6 @@
         #bigClock .cs .dot{ width:7px; height:7px; }
         #bigClock .kv{ font-size:10.5px; }
         #bigClock .kv .lab{ font-size:9.5px; margin-right:3px; }
-        #clockOnlyBtn{ top:4px; right:6px; min-height:20px; padding:0 7px; font-size:9.5px; }
         #creditText{ display:none; }
         /* Compact transport: the speed control group wraps inside
            the bar instead of pushing its numeric input off the
@@ -532,7 +500,6 @@
 
     <!-- Big UTC clock -->
     <section class="panel" id="bigClock" aria-label="Current UTC time">
-      <button id="clockOnlyBtn" type="button" aria-pressed="false" title="Toggle time-only display">Time Only</button>
       <div class="date mono" id="bcDate">----/--/--</div>
       <div class="time mono"><span id="bcTime">--:--:--</span> <small>UTC</small></div>
       <div class="sub">
@@ -598,7 +565,6 @@
         <label for="globalColor">Trail &amp; Aircraft Color (All Flights) <span class="val" id="globalColorVal">#ff0000</span></label>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input type="color" id="globalColor" value="#ff0000" style="width:44px;height:32px;padding:2px;border:1px solid var(--line-strong);border-radius:8px;background:#0b1727;cursor:pointer" aria-label="Trail and aircraft color for all flights" />
-          <span id="globalSwatches" style="display:flex;gap:5px;flex-wrap:wrap"></span>
         </div>
       </div>
       <label class="check"><input type="checkbox" id="showFullRoutes" /> Show Full Routes Faintly</label>
@@ -612,16 +578,12 @@
           <input type="range" id="fullRouteOpacity" min="2" max="90" step="1" value="22" />
         </div>
         <div class="ctl">
-          <label for="fullRouteColor">Full Route Color <span class="val" id="fullRouteColorVal">#ff0000</span></label>
+          <label for="fullRouteColor">Full Route Color <span class="val" id="fullRouteColorVal">#0000ff</span></label>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <input type="color" id="fullRouteColor" value="#ff0000" style="width:44px;height:32px;padding:2px;border:1px solid var(--line-strong);border-radius:8px;background:#0b1727;cursor:pointer" aria-label="Full route color for all flights" />
-            <span id="fullRouteSwatches" style="display:flex;gap:5px;flex-wrap:wrap"></span>
+            <input type="color" id="fullRouteColor" value="#0000ff" style="width:44px;height:32px;padding:2px;border:1px solid var(--line-strong);border-radius:8px;background:#0b1727;cursor:pointer" aria-label="Full route color for all flights" />
           </div>
         </div>
       </div>
-      <button class="psec-restore" id="restoreCamera" type="button">Camera ▸</button>
-      <div class="psec" id="secCamera">
-      <button class="psec-close" data-psec-close="secCamera" data-psec-restore="restoreCamera" type="button" aria-label="Hide camera settings" title="Hide camera settings">×</button>
       <h2 style="margin-top:14px">Camera</h2>
       <div class="seg" id="camSeg" role="group" aria-label="Camera mode" style="flex-wrap:wrap">
         <button type="button" data-cam="follow">Follow</button>
@@ -660,10 +622,6 @@
         <label for="camZoomFlex">Auto-Zoom Amount <span class="val" id="camZoomFlexVal">60%</span></label>
         <input type="range" id="camZoomFlex" min="0" max="100" step="1" value="60" />
       </div>
-      </div>
-      <button class="psec-restore" id="restoreKeyframes" type="button">Timeline Keyframes ▸</button>
-      <div class="psec" id="secKeyframes">
-      <button class="psec-close" data-psec-close="secKeyframes" data-psec-restore="restoreKeyframes" type="button" aria-label="Hide timeline keyframes" title="Hide timeline keyframes">×</button>
       <h2 style="margin-top:14px">Timeline Keyframes</h2>
       <div class="ctl">
         <label for="kfFlight">Keyframe CSV (which flight)</label>
@@ -703,30 +661,8 @@
         <button class="btn primary small" id="addKfBtn" type="button">Add Keyframe in the CSV Above at the Time Above</button>
       </div>
       <div id="kfList"></div>
-      </div>
       <label class="check"><input type="checkbox" id="showLabels" checked /> Show Callsign Labels</label>
-      <label class="check"><input type="checkbox" id="loopPlay" checked /> Loop Playback</label>
       <label class="check"><input type="checkbox" id="autoFrame" checked /> Auto-Zoom to Data Bounds on Load</label>
-      <label class="check"><input type="checkbox" id="clockOnlyChk" /> Time Only (Hide ALT / SPD)</label>
-      <h2 style="margin-top:14px">Playback Duration</h2>
-      <label class="check"><input type="checkbox" id="useTargetDuration" checked /> Fit to Total Playback Time</label>
-      <div class="ctl">
-        <label>Target Total Time <span class="val" id="targetDurVal">0:30</span></label>
-        <div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap">
-          <input type="number" class="numin" id="targetMin" min="0" max="600" step="1" value="0" aria-label="Target total minutes" />
-          <span style="font-size:12px;color:var(--muted);font-weight:600">min</span>
-          <input type="number" class="numin" id="targetSec" min="0" max="59" step="1" value="30" aria-label="Target total seconds" />
-          <span style="font-size:12px;color:var(--muted);font-weight:600">sec</span>
-        </div>
-        <div class="dur-presets">
-          <button class="btn ghost small" type="button" data-target-sec="30">30s</button>
-          <button class="btn ghost small" type="button" data-target-sec="60">1 min</button>
-          <button class="btn ghost small" type="button" data-target-sec="120">2 min</button>
-          <button class="btn ghost small" type="button" data-target-sec="300">5 min</button>
-          <button class="btn ghost small" type="button" data-target-sec="600">10 min</button>
-        </div>
-        <p class="hint" id="targetSpeedInfo" style="margin-top:7px">Load flights to see the fitted speed.</p>
-      </div>
       <h2 style="margin-top:14px">Screen Recording (Real-Time)</h2>
       <div class="ctl">
         <label for="recFormat">Recording Format</label>
@@ -771,6 +707,23 @@
         </button>
         <div id="clock" class="mono"><span class="cur" id="clockCur">00:00</span> <span class="tot">/ <span id="clockTot">--:--</span></span></div>
         <div id="nowPlaying"><span class="dot" id="npDot" style="background:#ff0000;color:#ff0000"></span><span class="np-label">Playing:</span><span class="nm" id="npName">—</span></div>
+        <div class="inline-ctl" id="durCtl">
+          <label for="durSel">Length</label>
+          <select id="durSel" aria-label="Total playback time — speed is fitted so all flights play in this time">
+            <option value="30" selected>30s</option>
+            <option value="60">1:00</option>
+            <option value="90">1:30</option>
+            <option value="120">2:00</option>
+            <option value="150">2:30</option>
+            <option value="180">3:00</option>
+            <option value="210">3:30</option>
+            <option value="240">4:00</option>
+            <option value="270">4:30</option>
+            <option value="300">5:00</option>
+          </select>
+          <input type="number" id="durInput" class="speed-num mono" min="5" step="any" value="30" inputmode="numeric" aria-label="Custom total playback time in seconds" title="Type any total playback time in seconds and press Enter — the speed is fitted to it" />
+          <span aria-hidden="true" style="margin-left:-4px">sec</span>
+        </div>
         <div class="inline-ctl">
           <label for="speedSel">Speed</label>
           <select id="speedSel" aria-label="Playback speed presets">
@@ -7608,7 +7561,6 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
 
     var R = 100;
     var ALT_K = 0.00038;
-    var PALETTE = ['#ff0000','#22d3ee','#fb923c','#a3e635','#f472b6','#facc15','#2dd4bf','#f87171','#93c5fd'];
     var SAMPLES = 900;
     var WEEKDAYS = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
 
@@ -7652,7 +7604,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       trailWidth: 1.5,
       fullRouteWidth: 2,
       fullRouteOpacity: 0.22,
-      fullRouteColor: '#ff0000',
+      fullRouteColor: '#0000ff',
       useTargetDuration: true,
       targetDurationSec: 30,
       camMode: 'orbit',
@@ -7670,7 +7622,6 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       showLabels: true,
       loop: true,
       autoFrame: true,
-      clockOnly: false,
       uiHidden: false
     };
     var reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -8180,11 +8131,6 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       });
       var pick = document.getElementById('fullRouteColor'); if (pick) pick.value = css;
       var val = document.getElementById('fullRouteColorVal'); if (val) val.textContent = css;
-      var swWrap = document.getElementById('fullRouteSwatches');
-      if (swWrap) Array.prototype.forEach.call(swWrap.children, function(sw){
-        sw.classList.toggle('on', sw.dataset.color === css);
-        sw.style.borderColor = (sw.dataset.color === css) ? '#fff' : 'transparent';
-      });
     }
     function applyVisColor(vis, css){
       if (!vis) return;
@@ -8217,8 +8163,6 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       flights.forEach(function(fl){ setFlightColor(fl, css); });
       var pick = document.getElementById('globalColor'); if (pick) pick.value = css;
       var val = document.getElementById('globalColorVal'); if (val) val.textContent = css;
-      var swWrap = document.getElementById('globalSwatches');
-      if (swWrap) Array.prototype.forEach.call(swWrap.children, function(sw){ sw.classList.toggle('on', sw.dataset.color === css); });
       renderSegBar(); refreshSegBarStates();
     }
     function globeProject(fl){
@@ -8797,7 +8741,6 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       if (typeof renderKeyframes === 'function') renderKeyframes();
       var ct = document.getElementById('clockTot'); if (ct) ct.textContent = fmtClock(totalDurationSec());
       if (state.useTargetDuration && typeof applyTargetDuration === 'function') applyTargetDuration();
-      else if (typeof updateTargetSpeedInfo === 'function') updateTargetSpeedInfo();
     }
     function totalDurationSec(){
       var s = segments.reduce(function(a, seg){ return a + (seg.w || 0); }, 0);
@@ -9311,9 +9254,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       if (!isFinite(sp)) return;
       if (!fromTarget && state.useTargetDuration){
         state.useTargetDuration = false;
-        var tChk = document.getElementById('useTargetDuration');
-        if (tChk) tChk.checked = false;
-        if (typeof updateTargetSpeedInfo === 'function') updateTargetSpeedInfo();
+        if (typeof syncDurUI === 'function') syncDurUI();
       }
       /* Lower bound only (a speed must stay positive); no upper clamp. */
       state.speed = Math.max(0.25, sp);
@@ -9340,96 +9281,65 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
     }
     /* ---------------- Fit to total playback time ----------------
        Speed = (total flight time, gaps skipped) / target total time.
+       The target is set in the transport bar: the Length dropdown
+       (30s to 5 min in 30s steps) or any number of seconds typed
+       into the box next to it. Picking a target turns the fit on;
+       changing the speed by hand turns it off again (see setSpeed)
+       and the Length control dims to show the fit is off.
        Re-applied whenever the timeline is rebuilt (flights added,
-       removed or hidden) and whenever the target time changes. */
-    function getTargetDurationSecFromInputs(){
-      var mEl = document.getElementById('targetMin');
-      var sEl = document.getElementById('targetSec');
-      var m = mEl ? Math.max(0, parseInt(mEl.value, 10) || 0) : 0;
-      var s = sEl ? Math.max(0, Math.min(59, parseInt(sEl.value, 10) || 0)) : 0;
-      return Math.max(5, m * 60 + s);
-    }
-    function syncTargetInputs(totalSec){
-      var mEl = document.getElementById('targetMin');
-      var sEl = document.getElementById('targetSec');
-      if (mEl) mEl.value = String(Math.floor(totalSec / 60));
-      if (sEl) sEl.value = String(Math.floor(totalSec % 60));
-      var val = document.getElementById('targetDurVal');
-      if (val) val.textContent = fmtClock(totalSec);
-    }
-    function updateTargetSpeedInfo(){
-      var info = document.getElementById('targetSpeedInfo');
-      if (!info) return;
-      var total = totalDurationSec();
-      var tgt = state.targetDurationSec || getTargetDurationSecFromInputs();
-      if (!visibleFlights().length){ info.textContent = 'Load flights to see the fitted speed.'; return; }
-      var need = total / Math.max(5, tgt);
-      if (state.useTargetDuration){
-        info.textContent = 'Flight time total ' + fmtClock(total) + ' → plays in ' + fmtClock(tgt) + ' at ' + fmtSpeed(state.speed) + '.';
-      } else {
-        info.textContent = 'Flight time total ' + fmtClock(total) + '. Turn on to play it in ' + fmtClock(tgt) + ' (needs ' + fmtSpeed(need) + ').';
+       removed or hidden) and whenever the target changes. */
+    var durSelEl = document.getElementById('durSel');
+    var durInputEl = document.getElementById('durInput');
+    var durCtlEl = document.getElementById('durCtl');
+    function syncDurUI(){
+      var tgt = Math.max(5, Math.round(state.targetDurationSec || 30));
+      if (durSelEl){
+        var matched = false;
+        for (var oi = 0; oi < durSelEl.options.length; oi++){
+          if (parseFloat(durSelEl.options[oi].value) === tgt){ durSelEl.selectedIndex = oi; matched = true; break; }
+        }
+        if (!matched) durSelEl.selectedIndex = -1;
       }
+      if (durInputEl && document.activeElement !== durInputEl) durInputEl.value = String(tgt);
+      if (durCtlEl) durCtlEl.style.opacity = state.useTargetDuration ? '' : '0.55';
+    }
+    function setTargetDuration(sec){
+      if (!isFinite(sec)) return;
+      state.targetDurationSec = Math.max(5, Math.round(sec));
+      state.useTargetDuration = true;
+      syncDurUI();
+      applyTargetDuration();
     }
     function applyTargetDuration(){
-      if (!state.useTargetDuration){ updateTargetSpeedInfo(); return; }
+      if (!state.useTargetDuration) return;
       var total = totalDurationSec();
       var tgt = Math.max(5, state.targetDurationSec || 30);
       if (total > 0) setSpeed(total / tgt, false, true);
-      updateTargetSpeedInfo();
     }
-    (function bindTargetDuration(){
-      var chk = document.getElementById('useTargetDuration');
-      if (!chk) return;
-      chk.checked = !!state.useTargetDuration;
-      chk.addEventListener('change', function(e){
-        state.useTargetDuration = !!e.target.checked;
-        if (state.useTargetDuration){
-          state.targetDurationSec = getTargetDurationSecFromInputs();
-          syncTargetInputs(state.targetDurationSec);
-          applyTargetDuration();
-          toast('Speed fitted to a total of ' + fmtClock(state.targetDurationSec) + ' (' + fmtSpeed(state.speed) + ')');
-        } else updateTargetSpeedInfo();
-      });
-      function onTargetInput(){
-        state.targetDurationSec = getTargetDurationSecFromInputs();
-        var val = document.getElementById('targetDurVal');
-        if (val) val.textContent = fmtClock(state.targetDurationSec);
-        if (state.useTargetDuration) applyTargetDuration(); else updateTargetSpeedInfo();
-      }
-      var mEl = document.getElementById('targetMin');
-      var sEl = document.getElementById('targetSec');
-      if (mEl) mEl.addEventListener('input', onTargetInput);
-      if (sEl) sEl.addEventListener('input', onTargetInput);
-      if (mEl) mEl.addEventListener('change', function(){ syncTargetInputs(state.targetDurationSec); });
-      if (sEl) sEl.addEventListener('change', function(){ syncTargetInputs(state.targetDurationSec); });
-      document.querySelectorAll('[data-target-sec]').forEach(function(btn){
-        btn.addEventListener('click', function(){
-          state.targetDurationSec = parseInt(btn.dataset.targetSec, 10) || 120;
-          syncTargetInputs(state.targetDurationSec);
-          if (!state.useTargetDuration){ state.useTargetDuration = true; chk.checked = true; }
-          applyTargetDuration();
-        });
-      });
-      syncTargetInputs(state.targetDurationSec);
-      updateTargetSpeedInfo();
-    })();
-    /* Loop playback is controlled from two places that must stay
-       in sync: the Settings checkbox and the toggle button in the
-       transport (playback) bar. Both write state.loop; the animate
-       loop reads it, and screen recording still stops at the end
-       of the timeline regardless (its branch runs before the loop
+    if (durSelEl) durSelEl.addEventListener('change', function(e){ setTargetDuration(parseFloat(e.target.value)); });
+    if (durInputEl){
+      var applyDurInput = function(){
+        var v = parseFloat(durInputEl.value);
+        if (isFinite(v) && v >= 5) setTargetDuration(v);
+        else syncDurUI();
+      };
+      durInputEl.addEventListener('change', applyDurInput);
+      durInputEl.addEventListener('keydown', function(e){ if (e.key === 'Enter'){ applyDurInput(); durInputEl.blur(); } });
+    }
+    syncDurUI();
+    /* Loop playback is toggled only by the button in the transport
+       (playback) bar, which writes state.loop; the animate loop
+       reads it, and screen recording still stops at the end of
+       the timeline regardless (its branch runs before the loop
        branch there). Default is ON. */
     (function bindLoopControls(){
-      var loopChk = document.getElementById('loopPlay');
       var loopBtn = document.getElementById('loopBtn');
       function syncLoopUI(){
-        if (loopChk) loopChk.checked = !!state.loop;
         if (loopBtn){
           loopBtn.setAttribute('aria-pressed', state.loop ? 'true' : 'false');
           loopBtn.title = state.loop ? 'Loop playback: ON (click to turn off)' : 'Loop playback: OFF (click to turn on)';
         }
       }
-      if (loopChk) loopChk.addEventListener('change', function(e){ state.loop = !!e.target.checked; syncLoopUI(); });
       if (loopBtn) loopBtn.addEventListener('click', function(){ state.loop = !state.loop; syncLoopUI(); });
       syncLoopUI();
     })();
@@ -9459,15 +9369,6 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       });
       var pick = document.getElementById('fullRouteColor');
       if (pick) pick.addEventListener('input', function(){ setFullRouteColor(pick.value); });
-      var wrap = document.getElementById('fullRouteSwatches');
-      if (wrap) PALETTE.forEach(function(pc){
-        var sw = document.createElement('button');
-        sw.type = 'button'; sw.className = 'sw' + (pc === state.fullRouteColor ? ' on' : ''); sw.dataset.color = pc;
-        sw.style.cssText = 'width:18px;height:18px;min-height:18px;border-radius:50%;border:2px solid ' + (pc === state.fullRouteColor ? '#fff' : 'transparent') + ';padding:0;cursor:pointer;background:' + pc;
-        sw.title = pc; sw.setAttribute('aria-label', 'Full route preset color ' + pc);
-        sw.addEventListener('click', function(){ setFullRouteColor(pc); });
-        wrap.appendChild(sw);
-      });
     })();
     var altScaleEl = document.getElementById('altScale');
     altScaleEl.addEventListener('input', function(){
@@ -9489,15 +9390,6 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
     (function bindGlobalColor(){
       var pick = document.getElementById('globalColor');
       if (pick) pick.addEventListener('input', function(){ setAllFlightColor(pick.value); });
-      var wrap = document.getElementById('globalSwatches');
-      if (wrap) PALETTE.forEach(function(pc){
-        var sw = document.createElement('button');
-        sw.type='button'; sw.className='sw'+(pc===state.globalColor?' on':''); sw.dataset.color=pc; sw.style.background=pc;
-        sw.style.cssText='width:18px;height:18px;min-height:18px;border-radius:50%;border:2px solid '+(pc===state.globalColor?'#fff':'transparent')+';padding:0;cursor:pointer;background:'+pc;
-        sw.title=pc; sw.setAttribute('aria-label','Preset color '+pc);
-        sw.addEventListener('click', function(){ setAllFlightColor(pc); });
-        wrap.appendChild(sw);
-      });
     })();
     var camSeg = document.getElementById('camSeg');
     var camSnap = true;
@@ -9863,18 +9755,6 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       this.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
     });
 
-    /* ---------------- Clock-only (time only) toggle ---------------- */
-    function setClockOnly(on){
-      state.clockOnly = !!on;
-      document.getElementById('bigClock').classList.toggle('clock-only', state.clockOnly);
-      var btn = document.getElementById('clockOnlyBtn');
-      btn.textContent = state.clockOnly ? 'Show ALT/SPD' : 'Time Only';
-      btn.setAttribute('aria-pressed', state.clockOnly ? 'true' : 'false');
-      document.getElementById('clockOnlyChk').checked = state.clockOnly;
-    }
-    document.getElementById('clockOnlyBtn').addEventListener('click', function(){ setClockOnly(!state.clockOnly); });
-    document.getElementById('clockOnlyChk').addEventListener('change', function(e){ setClockOnly(e.target.checked); });
-
     /* ---------------- UI show / hide toggle ---------------- */
     function setUiHidden(hidden){
       state.uiHidden = !!hidden;
@@ -9940,26 +9820,6 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
         if (d.key === 'settings') document.getElementById('settingsPanel').classList.add('open');
       });
     });
-    /* Settings sections (Camera / Timeline Keyframes): x button
-       hides the section and shows its restore strip in its place. */
-    document.querySelectorAll('[data-psec-close]').forEach(function(btn){
-      btn.addEventListener('click', function(e){
-        e.stopPropagation();
-        var sec = document.getElementById(btn.dataset.psecClose);
-        var strip = document.getElementById(btn.dataset.psecRestore);
-        if (sec) sec.classList.add('psec-off');
-        if (strip) strip.classList.add('show');
-      });
-    });
-    document.querySelectorAll('.psec-restore').forEach(function(strip){
-      strip.addEventListener('click', function(){
-        var secId = strip.id === 'restoreCamera' ? 'secCamera' : 'secKeyframes';
-        var sec = document.getElementById(secId);
-        if (sec) sec.classList.remove('psec-off');
-        strip.classList.remove('show');
-      });
-    });
-
     /* ---------------- File input ---------------- */
     var dropzone = document.getElementById('dropzone');
     var fileInput = document.getElementById('fileInput');
@@ -10216,7 +10076,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       if (!liveHudCtx || !liveHudTex) return;
       var hud = lastHud || {};
       var key = [hud.date, hud.time, hud.alt, hud.spd, hud.local, hud.cs, hud.color,
-        state.clockOnly ? '1' : '0', liveHudW, liveHudH].join('|');
+        liveHudW, liveHudH].join('|');
       if (!force && key === liveHudKey) return;
       var nowMs = performance.now();
       if (!force && nowMs - liveHudLastDraw < 100) return; /* throttled: at most 10 uploads/sec */
@@ -10236,7 +10096,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
          worst in narrow portrait frames). The labels have NO
          background at all, in the browser and here alike: grey
          labels (#b8bec7), white values. */
-      var showSub = !state.clockOnly;
+      var showSub = true;
       var showCs = showSub && !!(hud.cs && String(hud.cs).trim());
       var csFont = '900 ' + (16 * s) + 'px "Noto Sans JP", sans-serif';
       var labFont = '700 ' + (13.5 * s) + 'px "JetBrains Mono", monospace';
