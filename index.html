@@ -458,11 +458,10 @@
         #nowPlaying .np-label{ display:none; }
         #nowPlaying .nm{ max-width:100%; }
         .inline-ctl{ flex:1 1 100%; flex-wrap:wrap; row-gap:4px; max-width:100%; }
-        /* The whole speed group fits on ONE line at phone width:
-           the "Speed" caption goes (the preset box, slider and
-           numeric box read fine without it), the slider and the
-           value readout shrink to match. */
-        #transport .inline-ctl label{ display:none; }
+        /* The control groups each take a full row at phone width,
+           so their captions ("Total playback time" / "Playback
+           speed") stay visible; the slider and the value readout
+           shrink so the speed group still fits on one line. */
         #speedSlider{ width:56px !important; }
         #speedVal{ min-width:30px !important; }
         .inline-ctl select{ min-height:34px; font-size:11.5px; }
@@ -634,7 +633,6 @@
           <span style="font-size:12px;color:var(--muted);font-weight:600">min</span>
           <input type="number" class="numin" id="kfSec" min="0" max="59" step="1" value="0" aria-label="Keyframe flight time inside the CSV, seconds" />
           <span style="font-size:12px;color:var(--muted);font-weight:600">sec</span>
-          <button class="btn ghost small" id="kfUsePlayheadBtn" type="button">Use Playhead Position</button>
         </div>
         <p class="hint" style="margin-top:6px">Selected CSV length: <span class="mono" id="kfFlightDur">--:--</span>. Playhead: <span class="mono" id="kfPlayheadTime">—</span> / <span class="mono" id="kfTotalTime">--:--</span> inside the CSV now playing.</p>
       </div>
@@ -709,8 +707,9 @@
         <div id="clock" class="mono"><span class="cur" id="clockCur">00:00</span> <span class="tot">/ <span id="clockTot">--:--</span></span></div>
         <div id="nowPlaying"><span class="dot" id="npDot" style="background:#ff0000;color:#ff0000"></span><span class="np-label">Playing:</span><span class="nm" id="npName">—</span></div>
         <div class="inline-ctl" id="durCtl">
-          <label for="durSel">Length</label>
+          <label for="durSel">Total playback time</label>
           <select id="durSel" aria-label="Total playback time — speed is fitted so all flights play in this time">
+            <option value=""></option>
             <option value="30" selected>30s</option>
             <option value="60">1:00</option>
             <option value="90">1:30</option>
@@ -732,10 +731,10 @@
             <option value="570">9:30</option>
             <option value="600">10:00</option>
           </select>
-          <span class="mono" id="durTotal" title="Total playback time at the current speed — change the speed and this updates; pick a Length and the speed is fitted to it">= --:--</span>
+          <span class="mono" id="durTotal" title="Total playback time at the current speed — change the speed and this updates; pick a Total playback time and the speed is fitted to it">= --:--</span>
         </div>
         <div class="inline-ctl">
-          <label for="speedSlider">Speed</label>
+          <label for="speedSlider">Playback speed</label>
           <input type="range" id="speedSlider" min="0" max="120" step="1" value="47" aria-label="Playback speed slider" title="Playback speed (log scale, 0.5x to 100,000x on the slider — there is no upper limit: type any speed in the box next to it)" style="width:104px" />
           <span class="mono" id="speedVal" style="min-width:44px">60x</span>
           <input type="number" id="speedInput" class="speed-num mono" min="0.25" step="any" value="60" inputmode="decimal" aria-label="Custom playback speed (no upper limit)" title="Type any playback speed and press Enter — there is no upper limit" />
@@ -9240,10 +9239,12 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
     }
     function setSpeed(sp, fromSlider, fromTarget){
       /* A manual speed change turns Fit-to-Total-Time off, so the two
-         never fight; changes made BY the target-duration fit pass
-         fromTarget=true and keep it on. */
+         never fight, and blanks the Total playback time dropdown —
+         no preset is in effect until one is picked again. Changes
+         made BY the target-duration fit pass fromTarget=true and
+         keep the fit (and the picked preset) on. */
       if (!isFinite(sp)) return;
-      if (!fromTarget && state.useTargetDuration){
+      if (!fromTarget){
         state.useTargetDuration = false;
         if (typeof syncDurUI === 'function') syncDurUI();
       }
@@ -9254,7 +9255,8 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       if (speedInputEl && document.activeElement !== speedInputEl)
         speedInputEl.value = String(state.speed < 10 ? (Math.round(state.speed * 10) / 10) : Math.round(state.speed));
       /* Speed and total playback time reflect each other: any speed
-         change refreshes the total-time readout next to Length. */
+         change refreshes the total-time readout next to the Total
+         playback time dropdown. */
       if (typeof updateTotalTimeDisplay === 'function') updateTotalTimeDisplay();
     }
     speedSliderEl.addEventListener('input', function(){ setSpeed(sliderToSpeed(parseFloat(speedSliderEl.value)), true); });
@@ -9269,14 +9271,15 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
     }
     /* ---------------- Fit to total playback time ----------------
        Speed = (total flight time, gaps skipped) / target total time.
-       The target is set in the transport bar: the Length dropdown
-       only (30s to 10 min in 30s steps; there is no numeric input).
-       Picking a target turns the fit on; changing the speed by hand
-       turns it off again (see setSpeed) and the Length dropdown dims
-       to show the fit is off. Speed and playback time reflect each
-       other both ways: picking a Length refits the speed, and any
-       speed change updates the total playback time shown next to
-       the dropdown (total flight time / current speed).
+       The target is set in the transport bar: the Total playback
+       time dropdown only (30s to 10 min in 30s steps; there is no
+       numeric input). Picking a target turns the fit on; changing
+       the speed by hand turns it off again (see setSpeed) and the
+       dropdown goes blank, since no preset matches a hand-set
+       speed. Speed and playback time reflect each other both ways:
+       picking a Total playback time refits the speed, and any speed
+       change updates the total playback time shown next to the
+       dropdown (total flight time / current speed).
        Re-applied whenever the timeline is rebuilt (flights added,
        removed or hidden) and whenever the target changes. */
     var durSelEl = document.getElementById('durSel');
@@ -9290,14 +9293,22 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
     function syncDurUI(){
       var tgt = Math.max(5, Math.round(state.targetDurationSec || 30));
       if (durSelEl){
-        var matched = false;
-        for (var oi = 0; oi < durSelEl.options.length; oi++){
-          if (parseFloat(durSelEl.options[oi].value) === tgt){ durSelEl.selectedIndex = oi; matched = true; break; }
+        if (!state.useTargetDuration){
+          /* Fit is off (the speed was set by hand): the dropdown
+             shows its blank option — no preset is in effect. The
+             total-time readout next to it still shows the live
+             value at the current speed. */
+          for (var bi = 0; bi < durSelEl.options.length; bi++){
+            if (durSelEl.options[bi].value === ''){ durSelEl.selectedIndex = bi; break; }
+          }
+        } else {
+          var matched = false;
+          for (var oi = 0; oi < durSelEl.options.length; oi++){
+            if (parseFloat(durSelEl.options[oi].value) === tgt){ durSelEl.selectedIndex = oi; matched = true; break; }
+          }
+          if (!matched) durSelEl.selectedIndex = -1;
         }
-        if (!matched) durSelEl.selectedIndex = -1;
-        /* Only the dropdown dims when the fit is off; the total-time
-           readout next to it always shows the live value. */
-        durSelEl.style.opacity = state.useTargetDuration ? '' : '0.55';
+        durSelEl.style.opacity = '';
       }
       updateTotalTimeDisplay();
     }
@@ -9684,15 +9695,6 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       var val = document.getElementById('kfTimeVal');
       if (val) val.textContent = fmtClock(getKfTimeSecFromInputs());
     }
-    function syncKfFormFromPlayhead(){
-      var ci = currentInFlight();
-      if (!ci) return;
-      var sel = document.getElementById('kfFlight');
-      if (sel) sel.value = String(ci.fl.id);
-      setKfTimeInputs(ci.inSec);
-      kfTimeDirty = false;
-      updateKfFormMeta();
-    }
     (function bindKfForm(){
       var mEl = document.getElementById('kfMin'), sEl = document.getElementById('kfSec');
       function onEdit(){
@@ -9709,8 +9711,6 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
           setKfTimeInputs(flightDurationSec(fl));
         updateKfFormMeta();
       });
-      var useBtn = document.getElementById('kfUsePlayheadBtn');
-      if (useBtn) useBtn.addEventListener('click', function(){ syncKfFormFromPlayhead(); });
     })();
     document.getElementById('addKfBtn').addEventListener('click', function(){
       if (!flights.length){ toast('Load flight data first'); return; }
