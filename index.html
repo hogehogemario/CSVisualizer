@@ -95,11 +95,18 @@
         color:var(--muted); text-transform:uppercase;
       }
 
-      /* Big UTC clock */
+      /* Big UTC clock — fixed to the TOP of the 3D frame in every
+         aspect (never docked above the transport bar): layoutStage()
+         publishes the frame's on-screen top edge and width as the
+         --frame-top / --frame-w custom properties, and the HUD sits
+         just inside that top edge, centred on the frame. The
+         fallbacks cover the first paint before the script runs. */
       #bigClock{
-        left:50%; transform:translateX(-50%); top:14px;
+        left:50%; transform:translateX(-50%);
+        top:calc(var(--frame-top, 0px) + 10px);
+        z-index:40;
         padding:10px 22px 12px; text-align:center; pointer-events:none;
-        min-width:min(430px, 92vw);
+        min-width:min(430px, 92vw, calc(var(--frame-w, 100vw) - 12px));
       }
       #bigClock .date{ font-size:12px; letter-spacing:.22em; color:var(--muted); font-weight:700; }
       #bigClock .time{ font-size:34px; font-weight:700; line-height:1.15; letter-spacing:.04em; }
@@ -387,20 +394,20 @@
       .vm-row.off{ color:var(--muted); }
       .vm-row.off .vm-state{ color:var(--faint); }
       .vm-foot{ display:flex; gap:8px; margin-top:9px; }
-      /* Below desktop width the Clock HUD leaves the top of the
-         frame and docks above the transport bar. Its offset is NOT
-         a guessed pixel value: the script measures the transport
-         bar and the HUD themselves into the --th / --hh custom
-         properties (see syncChromeVars), so the HUD, the toast and
-         the recording bar stack directly on top of the bar's real
-         height however its rows wrap, and never slide over the 3D
-         frame or the controls. The fallbacks only cover the first
-         paint before the script runs. */
+      /* Below desktop width the Clock HUD STAYS fixed to the top of
+         the frame (it never docks above the transport bar); only its
+         padding and type shrink a little. The toast and the
+         recording bar still stack directly above the transport bar:
+         their offset is NOT a guessed pixel value — the script
+         measures the transport bar itself into the --th custom
+         property (see syncChromeVars), so they follow the bar's real
+         height however its rows wrap. The fallbacks only cover the
+         first paint before the script runs. */
       @media (max-width: 1180px){
-        #bigClock{ top:auto; bottom:calc(var(--th, 150px) + 12px); padding:8px 16px 9px; }
+        #bigClock{ padding:8px 16px 9px; }
         #bigClock .time{ font-size:26px; }
         #statsPanel{ display:none; }
-        #toast{ bottom:calc(var(--th, 150px) + var(--hh, 92px) + 14px); }
+        #toast{ bottom:calc(var(--th, 150px) + 14px); }
         #screenRecBar{ bottom:calc(var(--th, 150px) + 12px); }
       }
       @media (max-width: 720px){
@@ -418,16 +425,16 @@
           backdrop-filter:blur(14px);
         }
         /* Compact Clock HUD for phones: smaller type and tighter
-           rows, hugging the top of the transport bar (via --th),
-           wide enough that the sub row (callsign / ALT / SPD /
-           LOCAL) stays on one line on a typical phone. The date
-           row keeps clear of the Time Only button parked in the
-           HUD's top-right corner. On very narrow screens the sub
-           row wraps instead of overflowing, and the measured
-           --hh keeps everything above it correctly stacked. */
+           rows, still fixed to the top of the frame (via
+           --frame-top), wide enough that the sub row (callsign /
+           ALT / SPD / LOCAL) stays on one line on a typical phone,
+           and never wider than the frame itself. The date row
+           keeps clear of the Time Only button parked in the HUD's
+           top-right corner. On very narrow screens the sub row
+           wraps instead of overflowing. */
         #bigClock{
-          bottom:calc(var(--th, 176px) + 8px); top:auto; min-width:0;
-          width:auto; max-width:calc(100vw - 16px);
+          min-width:0;
+          width:auto; max-width:min(calc(100vw - 16px), calc(var(--frame-w, 100vw) - 12px));
           padding:7px 12px 8px;
         }
         #bigClock .date{ font-size:10px; letter-spacing:.14em; padding-right:74px; }
@@ -482,9 +489,9 @@
       }
       @media (max-width: 720px) and (orientation: portrait){
         /* Portrait phones: bias the frame upward so the letterbox
-           below it can hold the HUD + transport stack; with the
-           frame dead-centre the stack had nowhere to go and the
-           HUD ended up covering the chart. */
+           below it can hold the transport bar; the Clock HUD sits
+           inside the frame's top edge and follows the frame via
+           --frame-top wherever this bias puts it. */
         #stage{ top:46%; }
         #flightsPanel{ max-height:32dvh; }
       }
@@ -539,8 +546,8 @@
       </div>
       <h2 style="margin-top:14px">Frame Aspect</h2>
       <div class="seg" id="aspectSeg" role="group" aria-label="Frame aspect ratio">
-        <button type="button" data-aspect="16:9" class="on">16:9 Landscape</button>
-        <button type="button" data-aspect="9:16">9:16 Portrait</button>
+        <button type="button" data-aspect="16:9">16:9 Landscape</button>
+        <button type="button" data-aspect="9:16" class="on">9:16 Portrait</button>
       </div>
       <div class="ctl">
         <label for="altScale">Altitude Exaggeration <span class="val" id="altScaleVal">×0.5</span></label>
@@ -7616,7 +7623,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       camTrackSpeed: 1.4,
       camZoomFlex: 60,
       viewMode: 'local',
-      aspectMode: '16:9',
+      aspectMode: '9:16',
       mapLayer: 'vfr',
       showRoute: false,
       showLabels: true,
@@ -7663,7 +7670,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
        MP4 conversion of the recorded WebM — refuses odd dimensions
        ("height not divisible by 2"). Recordings stay convertible
        in both aspects. */
-    var VIEW_ASPECT = 16 / 9;
+    var VIEW_ASPECT = 9 / 16; /* default frame aspect: 9:16 portrait (Settings can switch to 16:9) */
     /* ---- Aspect compensation for portrait (9:16) ----
        THREE's fov is the VERTICAL angle, so with the FOV setting
        unchanged the HORIZONTAL field collapses in portrait: at
@@ -7760,6 +7767,15 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       c.style.width = '100%'; c.style.height = '100%';
       stage.style.width = (bw / pr) + 'px';
       stage.style.height = (bh / pr) + 'px';
+      /* Publish the frame's on-screen geometry: the Clock HUD is
+         fixed to the top of the frame (the --frame-top / --frame-w
+         CSS vars), in both aspects and at every window size. The
+         rect is read AFTER the size above is applied, so it also
+         reflects the portrait-phone upward bias of #stage. */
+      var frameRect = stage.getBoundingClientRect();
+      var docStyle = document.documentElement.style;
+      docStyle.setProperty('--frame-top', frameRect.top + 'px');
+      docStyle.setProperty('--frame-w', frameRect.width + 'px');
       if (camera){
         camera.aspect = VIEW_ASPECT;
         camera.fov = effectiveCamFovDeg();
@@ -7849,18 +7865,15 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
 
       /* Keep the --th / --hh CSS custom properties equal to the
          transport bar's and Clock HUD's rendered heights. The
-         narrow-screen CSS docks the Clock HUD — and with it the
-         View button, its menu, the toast and the recording bar —
-         directly above the transport bar using these vars, so the
-         stack follows the bar's real height however its rows wrap
-         on a small screen. (A hard-coded pixel offset was used
-         before; on phones the wrapped bar outgrew the guess and
-         the HUD slid up over the 3D frame.) A ResizeObserver keeps
-         the vars current when rows wrap, panels are hidden (a
-         display:none bar reports height 0, so the HUD drops to the
-         bottom edge), fonts load, or the segment bar grows. The
-         vars feed only positions, never the observed heights, so
-         this cannot feed back on itself. */
+         narrow-screen CSS stacks the toast, the recording bar and
+         the View menu directly above the transport bar using --th,
+         so they follow the bar's real height however its rows wrap
+         on a small screen. (The Clock HUD does NOT use these vars:
+         it is fixed to the top of the frame via --frame-top, set
+         by layoutStage().) A ResizeObserver keeps the vars current
+         when rows wrap, panels are hidden, fonts load, or the
+         segment bar grows. The vars feed only positions, never the
+         observed heights, so this cannot feed back on itself. */
       var rootStyle = document.documentElement.style;
       function syncChromeVars(){
         var t = document.getElementById('transport');
