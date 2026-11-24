@@ -257,6 +257,11 @@
       }
       .tbtn:hover{ border-color:var(--accent); }
       .tbtn svg{ width:16px; height:16px; }
+      /* Loop toggle in the transport bar: filled accent while ON
+         (the default), plain dark button while OFF. */
+      .tbtn[aria-pressed="true"]{ background:var(--accent); border-color:var(--accent); color:#04222b; }
+      .tbtn[aria-pressed="true"]:hover{ background:#4be0f7; border-color:#4be0f7; }
+      .tbtn[aria-pressed="false"]{ color:var(--muted); }
       #clock{ font-size:13px; min-width:148px; }
       #clock .cur{ color:var(--text); font-weight:700; }
       #clock .tot{ color:var(--faint); }
@@ -760,6 +765,9 @@
         </button>
         <button class="tbtn" id="restartBtn" type="button" aria-label="Move to the beginning (does not start playback)" title="Move to the beginning only — does not start playback">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+        </button>
+        <button class="tbtn" id="loopBtn" type="button" aria-label="Toggle loop playback" aria-pressed="true" title="Loop playback: ON (click to turn off)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
         </button>
         <div id="clock" class="mono"><span class="cur" id="clockCur">00:00</span> <span class="tot">/ <span id="clockTot">--:--</span></span></div>
         <div id="nowPlaying"><span class="dot" id="npDot" style="background:#ff0000;color:#ff0000"></span><span class="np-label">Playing:</span><span class="nm" id="npName">—</span></div>
@@ -9405,7 +9413,26 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       syncTargetInputs(state.targetDurationSec);
       updateTargetSpeedInfo();
     })();
-    document.getElementById('loopPlay').addEventListener('change', function(e){ state.loop = e.target.checked; });
+    /* Loop playback is controlled from two places that must stay
+       in sync: the Settings checkbox and the toggle button in the
+       transport (playback) bar. Both write state.loop; the animate
+       loop reads it, and screen recording still stops at the end
+       of the timeline regardless (its branch runs before the loop
+       branch there). Default is ON. */
+    (function bindLoopControls(){
+      var loopChk = document.getElementById('loopPlay');
+      var loopBtn = document.getElementById('loopBtn');
+      function syncLoopUI(){
+        if (loopChk) loopChk.checked = !!state.loop;
+        if (loopBtn){
+          loopBtn.setAttribute('aria-pressed', state.loop ? 'true' : 'false');
+          loopBtn.title = state.loop ? 'Loop playback: ON (click to turn off)' : 'Loop playback: OFF (click to turn on)';
+        }
+      }
+      if (loopChk) loopChk.addEventListener('change', function(e){ state.loop = !!e.target.checked; syncLoopUI(); });
+      if (loopBtn) loopBtn.addEventListener('click', function(){ state.loop = !state.loop; syncLoopUI(); });
+      syncLoopUI();
+    })();
     document.getElementById('autoFrame').addEventListener('change', function(e){ state.autoFrame = e.target.checked; });
     document.getElementById('showLabels').addEventListener('change', function(e){ state.showLabels = e.target.checked; });
     (function bindShowFullRoutes(){
