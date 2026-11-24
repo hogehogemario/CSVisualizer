@@ -189,8 +189,11 @@
       .hint{ font-size:11px; color:var(--faint); line-height:1.6; margin-top:10px; }
       .hint code{ font-family:"JetBrains Mono",monospace; font-size:10.5px; color:#a5c8e8; }
 
-      /* Right: settings */
-      #settingsPanel{ right:14px; top:14px; width:256px; padding:14px; max-height:calc(100dvh - 208px); overflow-y:auto; }
+      /* Right: settings. Its z-index sits ABOVE the Clock HUD (40),
+         same as the Flight Lists panel: on phones the opened panel
+         overlaps the frame-top HUD, and it must stay visible and
+         operable there instead of sliding underneath it. */
+      #settingsPanel{ right:14px; top:14px; width:256px; padding:14px; max-height:calc(100dvh - 208px); overflow-y:auto; z-index:50; }
       .seg{ display:flex; background:#0b1727; border:1px solid var(--line); border-radius:10px; padding:3px; gap:3px; }
       .seg button{
         flex:1; border:0; background:transparent; color:var(--muted); border-radius:7px;
@@ -368,36 +371,37 @@
         display:flex; align-items:center; justify-content:center;
       }
       .psec-close:hover{ color:var(--text); border-color:var(--line-strong); background:#132539; }
-      #viewBtn{
-        position:fixed; right:14px; bottom:14px; z-index:70;
-        display:inline-flex; align-items:center; gap:7px;
-        background:rgba(7,13,23,.72); color:var(--text);
-        border:1px solid var(--line-strong); border-radius:999px;
-        padding:0 14px; min-height:38px; font-size:12.5px; font-weight:700; cursor:pointer;
-        backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
-        opacity:.55; transition:opacity .2s;
-      }
-      #viewBtn:hover{ opacity:1; }
-      /* View button is always visible */
-      #viewMenu{
-        position:fixed; right:14px; bottom:60px; z-index:76; width:240px; padding:12px;
-        background:var(--panel); border:1px solid var(--line); border-radius:14px;
+      /* Pull tabs: when a panel is closed with its x button, a
+         small tab stays on the screen edge nearest the panel's
+         home position (Flight List: top-left edge, Settings:
+         top-right edge, Playback Bar: bottom edge). Clicking the
+         tab brings the panel back. Tabs sit above the Clock HUD
+         (40) so they are never hidden behind it. */
+      .pull-tab{
+        position:fixed; z-index:52; display:none;
+        align-items:center; justify-content:center; gap:6px;
+        background:var(--panel); border:1px solid var(--line-strong); color:var(--text);
+        font-size:11px; font-weight:700; letter-spacing:.08em; cursor:pointer;
         backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
-        box-shadow:0 18px 44px rgba(0,0,0,.5); display:none;
+        box-shadow:0 10px 26px rgba(0,0,0,.5); padding:10px 7px; min-height:44px;
       }
-      body.ui-hidden #viewMenu{ bottom:108px; }
-      #viewMenu.show{ display:block; }
-      #viewMenu h2{ margin:0 0 8px; font-size:11px; font-weight:700; letter-spacing:.14em; color:var(--muted); text-transform:uppercase; }
-      .vm-row{
-        display:flex; justify-content:space-between; align-items:center; gap:10px; width:100%;
-        background:transparent; border:0; border-radius:8px; color:var(--text);
-        font-size:12.5px; font-weight:600; padding:7px 8px; cursor:pointer; min-height:34px; text-align:left;
+      .pull-tab.show{ display:flex; }
+      .pull-tab:hover{ border-color:var(--accent); color:var(--accent); }
+      .pull-tab svg{ flex:none; }
+      #tabFlights{ left:0; top:14px; writing-mode:vertical-rl; border-left:0; border-radius:0 10px 10px 0; }
+      #tabSettings{ right:0; top:14px; writing-mode:vertical-rl; border-right:0; border-radius:10px 0 0 10px; }
+      #tabTransport{ left:50%; transform:translateX(-50%); bottom:0; border-bottom:0; border-radius:10px 10px 0 0; padding:7px 16px; min-height:36px; }
+      /* Restore strip left inside Settings where a closed section
+         (Camera / Timeline Keyframes) used to be. */
+      .psec-restore{
+        display:none; width:100%; margin-top:14px; text-align:left;
+        background:#0b1727; border:1px dashed var(--line-strong); border-radius:9px;
+        color:var(--muted); font-size:11px; font-weight:700; letter-spacing:.14em;
+        text-transform:uppercase; padding:8px 10px; cursor:pointer; min-height:34px;
       }
-      .vm-row:hover{ background:#132539; }
-      .vm-row .vm-state{ font-size:11px; color:var(--accent); font-weight:700; flex:none; }
-      .vm-row.off{ color:var(--muted); }
-      .vm-row.off .vm-state{ color:var(--faint); }
-      .vm-foot{ display:flex; gap:8px; margin-top:9px; }
+      .psec-restore.show{ display:block; }
+      .psec-restore:hover{ color:var(--accent); border-color:var(--accent); }
+      .psec-off{ display:none !important; }
       /* Below desktop width the Clock HUD STAYS fixed to the top of
          the frame (it never docks above the transport bar); only its
          padding and type shrink a little. The toast and the
@@ -432,7 +436,7 @@
         }
         #dropzone{ padding:10px; }
         #dropzone svg{ width:22px; height:22px; margin-bottom:4px; }
-        #settingsPanel{ display:none; right:10px; top:10px; width:min(264px, calc(100vw - 20px)); max-height:60dvh; overflow-y:auto; }
+        #settingsPanel{ display:none; right:10px; top:10px; width:min(264px, calc(100vw - 20px)); max-height:60dvh; overflow-y:auto; z-index:50; }
         #settingsPanel.open{ display:block; }
         #settingsToggle{
           /* z-index above the Clock HUD (40), same as the Flight
@@ -497,15 +501,15 @@
         #segBar{ height:16px; margin-top:1px; }
         #segBar .segblk{ font-size:9px; padding:0 5px; min-width:10px; }
         #mapCredit{ margin-top:4px; }
-        /* View button parks in the top-right rail under the
-           settings gear (the flight panel is narrowed to leave
-           that rail free), so it never sits on the HUD or the
-           transport bar. Its z-index drops below the panels so an
-           open Settings panel covers it instead of the other way
-           round. The menu still opens above the transport bar. */
-        #viewBtn{ top:62px; right:10px; bottom:auto; z-index:15; }
-        #viewMenu{ right:10px; bottom:calc(var(--th, 176px) + 54px); }
-        body.ui-hidden #viewMenu{ bottom:calc(var(--th, 176px) + 54px); }
+        /* On small screens the Flight List and Settings pull tabs
+           are NOT shown: the existing top-left / top-right icon
+           toggles already bring those panels back (their click
+           handlers restore a panel closed with its x button), so
+           a second tab would only duplicate them. The Playback
+           Bar has no icon toggle, so its bottom-edge pull tab
+           stays available at every width. */
+        #tabFlights, #tabSettings{ display:none !important; }
+        #tabTransport{ max-width:calc(100vw - 20px); }
       }
       @media (max-width: 720px) and (orientation: portrait){
         /* Portrait phones: bias the frame upward so the letterbox
@@ -610,7 +614,9 @@
           </div>
         </div>
       </div>
+      <button class="psec-restore" id="restoreCamera" type="button">Camera ▸</button>
       <div class="psec" id="secCamera">
+      <button class="psec-close" data-psec-close="secCamera" data-psec-restore="restoreCamera" type="button" aria-label="Hide camera settings" title="Hide camera settings">×</button>
       <h2 style="margin-top:14px">Camera</h2>
       <div class="seg" id="camSeg" role="group" aria-label="Camera mode" style="flex-wrap:wrap">
         <button type="button" data-cam="follow">Follow</button>
@@ -650,7 +656,9 @@
         <input type="range" id="camZoomFlex" min="0" max="100" step="1" value="60" />
       </div>
       </div>
+      <button class="psec-restore" id="restoreKeyframes" type="button">Timeline Keyframes ▸</button>
       <div class="psec" id="secKeyframes">
+      <button class="psec-close" data-psec-close="secKeyframes" data-psec-restore="restoreKeyframes" type="button" aria-label="Hide timeline keyframes" title="Hide timeline keyframes">×</button>
       <h2 style="margin-top:14px">Timeline Keyframes</h2>
       <div class="ctl">
         <label for="kfFlight">Keyframe CSV (which flight)</label>
@@ -794,19 +802,20 @@
       <div id="mapCredit"><span id="layerStatus">Map: —</span><span id="creditText"></span></div>
     </section>
 
-    <button id="viewBtn" type="button" aria-label="Show or hide individual panels">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-      View
+    <!-- Pull tabs: shown on the screen edge while the matching
+         panel is closed (see .pull-tab CSS). Clicking restores it. -->
+    <button class="pull-tab" id="tabFlights" type="button" aria-label="Show flight list">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0 4 4m-4-4L8 8"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+      Flights
     </button>
-    <div id="viewMenu" role="menu" aria-label="Panel visibility">
-      <h2>Panels - Show / Hide</h2>
-      <div id="viewMenuList"></div>
-      <div class="vm-foot">
-        <button class="btn ghost small" id="vmShowAll" type="button">Show All</button>
-        <button class="btn ghost small" id="vmHideAll" type="button">Hide All</button>
-      </div>
-      <p class="hint">Panels (except the Clock HUD, which is always shown) also have their own x button. Panel visibility never affects screen recording: recordings always contain only the 3D scene and the Clock HUD.</p>
-    </div>
+    <button class="pull-tab" id="tabSettings" type="button" aria-label="Show settings">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.2"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2Z"/></svg>
+      Settings
+    </button>
+    <button class="pull-tab" id="tabTransport" type="button" aria-label="Show playback bar">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15l13-7.5-13-7.5Z"/></svg>
+      Playback
+    </button>
     <div id="toast" role="status"></div>
 
     <!-- Screen-recording bar (always visible while recording; DOM only, never in the video) -->
@@ -7890,7 +7899,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       /* Keep the --th / --hh CSS custom properties equal to the
          transport bar's and Clock HUD's rendered heights. The
          narrow-screen CSS stacks the toast, the recording bar and
-         the View menu directly above the transport bar using --th,
+         the toast and recording bar directly above the transport bar using --th,
          so they follow the bar's real height however its rows wrap
          on a small screen. (The Clock HUD does NOT use these vars:
          it is fixed to the top of the frame via --frame-top, set
@@ -9816,7 +9825,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
     document.getElementById('flightsToggle').addEventListener('click', function(){
       var panel = document.getElementById('flightsPanel');
       if (typeof panelState !== 'undefined' && !panelState.flights){
-        /* The panel was hidden from its x button / the View menu:
+        /* The panel was hidden from its x button:
            bring it back already open. */
         setPanelVisible('flights', true);
         panel.classList.add('open');
@@ -9851,18 +9860,25 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
     }
 
     /* ---------------- Per-panel show / hide ----------------
-       Each window (clock HUD, flight list, settings, playback bar)
-       can be hidden on its own via its x button, and brought back
-       from the View menu (bottom-right View button). The Camera and
-       Timeline Keyframes sections inside Settings are always shown
-       with the Settings panel and are not listed in the View menu.
-       Panel visibility is purely an on-screen preference: it never
-       affects screen recording, which always contains only the 3D
-       scene plus the Clock HUD. */
+       Each window (flight list, settings, playback bar) is closed
+       with its own x button. A closed window leaves a small pull
+       tab on the screen edge nearest its home position (Flight
+       List: top-left edge, Settings: top-right edge, Playback
+       Bar: bottom edge); clicking the tab brings the window back.
+       On small screens the Flight List / Settings tabs are hidden
+       because the existing top-corner icon toggles already restore
+       those panels (see their click handlers above). The Clock
+       HUD has no x button and is always shown. The Camera and
+       Timeline Keyframes sections inside Settings have their own
+       x buttons too; a closed section leaves a slim restore strip
+       inside the Settings panel where the section was. Panel
+       visibility is purely an on-screen preference: it never
+       affects screen recording, which always contains only the
+       3D scene plus the Clock HUD. */
     var PANEL_DEFS = [
-      { key:'flights', label:'Flight List' },
-      { key:'settings', label:'Settings' },
-      { key:'transport', label:'Playback Bar / Timeline' }
+      { key:'flights', tab:'tabFlights' },
+      { key:'settings', tab:'tabSettings' },
+      { key:'transport', tab:'tabTransport' }
     ];
     var PANEL_EL = { clock:'bigClock', flights:'flightsPanel', settings:'settingsPanel', transport:'transport' };
     var panelState = { clock:true, flights:true, settings:true, transport:true };
@@ -9871,43 +9887,50 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       var el = document.getElementById(PANEL_EL[key]);
       if (el) el.classList.toggle('panel-off', !on);
       document.body.classList.toggle('has-hidden-panels', Object.keys(panelState).some(function(k){ return !panelState[k]; }));
-      renderViewMenu();
+      renderPullTabs();
     }
-    function renderViewMenu(){
-      var list = document.getElementById('viewMenuList');
-      if (!list) return;
-      list.innerHTML = '';
+    function renderPullTabs(){
       PANEL_DEFS.forEach(function(d){
-        var b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'vm-row' + (panelState[d.key] ? '' : ' off');
-        b.setAttribute('aria-pressed', panelState[d.key] ? 'true' : 'false');
-        b.innerHTML = '<span></span><span class="vm-state"></span>';
-        b.querySelector('span').textContent = d.label;
-        b.querySelector('.vm-state').textContent = panelState[d.key] ? 'Shown' : 'Hidden';
-        b.addEventListener('click', function(){ setPanelVisible(d.key, !panelState[d.key]); });
-        list.appendChild(b);
+        var tab = document.getElementById(d.tab);
+        if (tab) tab.classList.toggle('show', !panelState[d.key]);
       });
     }
     document.querySelectorAll('[data-close]').forEach(function(btn){
       btn.addEventListener('click', function(e){ e.stopPropagation(); setPanelVisible(btn.dataset.close, false); });
     });
-    var viewMenuEl = document.getElementById('viewMenu');
-    document.getElementById('viewBtn').addEventListener('click', function(e){
-      e.stopPropagation();
-      viewMenuEl.classList.toggle('show');
-      renderViewMenu();
+    PANEL_DEFS.forEach(function(d){
+      var tab = document.getElementById(d.tab);
+      if (!tab) return;
+      tab.addEventListener('click', function(){
+        setPanelVisible(d.key, true);
+        /* On small screens the flights / settings panels also
+           need their .open class to appear (same as their icon
+           toggles do); on wide screens the class has no effect. */
+        if (d.key === 'flights'){
+          document.getElementById('flightsPanel').classList.add('open');
+          document.getElementById('flightsToggle').setAttribute('aria-expanded', 'true');
+        }
+        if (d.key === 'settings') document.getElementById('settingsPanel').classList.add('open');
+      });
     });
-    document.addEventListener('click', function(e){
-      if (viewMenuEl.classList.contains('show') && !viewMenuEl.contains(e.target)) viewMenuEl.classList.remove('show');
+    /* Settings sections (Camera / Timeline Keyframes): x button
+       hides the section and shows its restore strip in its place. */
+    document.querySelectorAll('[data-psec-close]').forEach(function(btn){
+      btn.addEventListener('click', function(e){
+        e.stopPropagation();
+        var sec = document.getElementById(btn.dataset.psecClose);
+        var strip = document.getElementById(btn.dataset.psecRestore);
+        if (sec) sec.classList.add('psec-off');
+        if (strip) strip.classList.add('show');
+      });
     });
-    document.getElementById('vmShowAll').addEventListener('click', function(){
-      Object.keys(panelState).forEach(function(k){ setPanelVisible(k, true); });
-      setUiHidden(false);
-    });
-    document.getElementById('vmHideAll').addEventListener('click', function(){
-      Object.keys(panelState).forEach(function(k){ if (k !== 'clock') setPanelVisible(k, false); });
-      viewMenuEl.classList.remove('show');
+    document.querySelectorAll('.psec-restore').forEach(function(strip){
+      strip.addEventListener('click', function(){
+        var secId = strip.id === 'restoreCamera' ? 'secCamera' : 'secKeyframes';
+        var sec = document.getElementById(secId);
+        if (sec) sec.classList.remove('psec-off');
+        strip.classList.remove('show');
+      });
     });
 
     /* ---------------- File input ---------------- */
