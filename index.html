@@ -574,8 +574,8 @@
           <input type="range" id="fullRouteWidth" min="0.5" max="8" step="0.5" value="2" />
         </div>
         <div class="ctl">
-          <label for="fullRouteOpacity">Full Route Opacity <span class="val" id="fullRouteOpacityVal">22%</span></label>
-          <input type="range" id="fullRouteOpacity" min="2" max="90" step="1" value="22" />
+          <label for="fullRouteOpacity">Full Route Opacity <span class="val" id="fullRouteOpacityVal">50%</span></label>
+          <input type="range" id="fullRouteOpacity" min="2" max="90" step="1" value="50" />
         </div>
         <div class="ctl">
           <label for="fullRouteColor">Full Route Color <span class="val" id="fullRouteColorVal">#0000ff</span></label>
@@ -663,6 +663,7 @@
       <div id="kfList"></div>
       <label class="check"><input type="checkbox" id="showLabels" checked /> Show Callsign Labels</label>
       <label class="check"><input type="checkbox" id="autoFrame" checked /> Auto-Zoom to Data Bounds on Load</label>
+      <label class="check"><input type="checkbox" id="timeOnly" /> Time Only (Hide ALT / SPD)</label>
       <h2 style="margin-top:14px">Screen Recording (Real-Time)</h2>
       <div class="ctl">
         <label for="recFormat">Recording Format</label>
@@ -720,32 +721,21 @@
             <option value="240">4:00</option>
             <option value="270">4:30</option>
             <option value="300">5:00</option>
+            <option value="330">5:30</option>
+            <option value="360">6:00</option>
+            <option value="390">6:30</option>
+            <option value="420">7:00</option>
+            <option value="450">7:30</option>
+            <option value="480">8:00</option>
+            <option value="510">8:30</option>
+            <option value="540">9:00</option>
+            <option value="570">9:30</option>
+            <option value="600">10:00</option>
           </select>
-          <input type="number" id="durInput" class="speed-num mono" min="5" step="any" value="30" inputmode="numeric" aria-label="Custom total playback time in seconds" title="Type any total playback time in seconds and press Enter — the speed is fitted to it" />
-          <span aria-hidden="true" style="margin-left:-4px">sec</span>
+          <span class="mono" id="durTotal" title="Total playback time at the current speed — change the speed and this updates; pick a Length and the speed is fitted to it">= --:--</span>
         </div>
         <div class="inline-ctl">
-          <label for="speedSel">Speed</label>
-          <select id="speedSel" aria-label="Playback speed presets">
-            <option value="0.5">0.5×</option>
-            <option value="1">1×</option>
-            <option value="2">2×</option>
-            <option value="4">4×</option>
-            <option value="10">10×</option>
-            <option value="25">25×</option>
-            <option value="50">50×</option>
-            <option value="60" selected>60×</option>
-            <option value="100">100×</option>
-            <option value="250">250×</option>
-            <option value="500">500×</option>
-            <option value="1000">1000×</option>
-            <option value="2000">2000×</option>
-            <option value="5000">5000×</option>
-            <option value="10000">10000×</option>
-            <option value="25000">25000×</option>
-            <option value="50000">50000×</option>
-            <option value="100000">100000×</option>
-          </select>
+          <label for="speedSlider">Speed</label>
           <input type="range" id="speedSlider" min="0" max="120" step="1" value="47" aria-label="Playback speed slider" title="Playback speed (log scale, 0.5x to 100,000x on the slider — there is no upper limit: type any speed in the box next to it)" style="width:104px" />
           <span class="mono" id="speedVal" style="min-width:44px">60x</span>
           <input type="number" id="speedInput" class="speed-num mono" min="0.25" step="any" value="60" inputmode="decimal" aria-label="Custom playback speed (no upper limit)" title="Type any playback speed and press Enter — there is no upper limit" />
@@ -7603,7 +7593,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       trailFrac: 0.30,
       trailWidth: 1.5,
       fullRouteWidth: 2,
-      fullRouteOpacity: 0.22,
+      fullRouteOpacity: 0.5,
       fullRouteColor: '#0000ff',
       useTargetDuration: true,
       targetDurationSec: 30,
@@ -7620,6 +7610,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       mapLayer: 'vfr',
       showRoute: false,
       showLabels: true,
+      timeOnly: false,
       loop: true,
       autoFrame: true,
       uiHidden: false
@@ -8741,6 +8732,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       if (typeof renderKeyframes === 'function') renderKeyframes();
       var ct = document.getElementById('clockTot'); if (ct) ct.textContent = fmtClock(totalDurationSec());
       if (state.useTargetDuration && typeof applyTargetDuration === 'function') applyTargetDuration();
+      if (typeof updateTotalTimeDisplay === 'function') updateTotalTimeDisplay();
     }
     function totalDurationSec(){
       var s = segments.reduce(function(a, seg){ return a + (seg.w || 0); }, 0);
@@ -9227,7 +9219,6 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       state.progress = progressEl.value / 1000;
     });
     progressEl.addEventListener('change', function(){ scrubbing = false; });
-    var speedSelEl = document.getElementById('speedSel');
     var speedSliderEl = document.getElementById('speedSlider');
     var speedValEl = document.getElementById('speedVal');
     var speedInputEl = document.getElementById('speedInput');
@@ -9262,13 +9253,10 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       if (!fromSlider) speedSliderEl.value = String(speedToSlider(state.speed));
       if (speedInputEl && document.activeElement !== speedInputEl)
         speedInputEl.value = String(state.speed < 10 ? (Math.round(state.speed * 10) / 10) : Math.round(state.speed));
-      var matched = false;
-      for (var oi = 0; oi < speedSelEl.options.length; oi++){
-        if (parseFloat(speedSelEl.options[oi].value) === state.speed){ speedSelEl.selectedIndex = oi; matched = true; break; }
-      }
-      if (!matched) speedSelEl.selectedIndex = -1;
+      /* Speed and total playback time reflect each other: any speed
+         change refreshes the total-time readout next to Length. */
+      if (typeof updateTotalTimeDisplay === 'function') updateTotalTimeDisplay();
     }
-    speedSelEl.addEventListener('change', function(e){ setSpeed(parseFloat(e.target.value), false); });
     speedSliderEl.addEventListener('input', function(){ setSpeed(sliderToSpeed(parseFloat(speedSliderEl.value)), true); });
     if (speedInputEl){
       var applySpeedInput = function(){
@@ -9282,15 +9270,23 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
     /* ---------------- Fit to total playback time ----------------
        Speed = (total flight time, gaps skipped) / target total time.
        The target is set in the transport bar: the Length dropdown
-       (30s to 5 min in 30s steps) or any number of seconds typed
-       into the box next to it. Picking a target turns the fit on;
-       changing the speed by hand turns it off again (see setSpeed)
-       and the Length control dims to show the fit is off.
+       only (30s to 10 min in 30s steps; there is no numeric input).
+       Picking a target turns the fit on; changing the speed by hand
+       turns it off again (see setSpeed) and the Length dropdown dims
+       to show the fit is off. Speed and playback time reflect each
+       other both ways: picking a Length refits the speed, and any
+       speed change updates the total playback time shown next to
+       the dropdown (total flight time / current speed).
        Re-applied whenever the timeline is rebuilt (flights added,
        removed or hidden) and whenever the target changes. */
     var durSelEl = document.getElementById('durSel');
-    var durInputEl = document.getElementById('durInput');
-    var durCtlEl = document.getElementById('durCtl');
+    var durTotalEl = document.getElementById('durTotal');
+    function updateTotalTimeDisplay(){
+      if (!durTotalEl) return;
+      var total = totalDurationSec();
+      var t = (total > 0 && state.speed > 0) ? total / state.speed : 0;
+      durTotalEl.textContent = '= ' + fmtClock(t);
+    }
     function syncDurUI(){
       var tgt = Math.max(5, Math.round(state.targetDurationSec || 30));
       if (durSelEl){
@@ -9299,9 +9295,11 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
           if (parseFloat(durSelEl.options[oi].value) === tgt){ durSelEl.selectedIndex = oi; matched = true; break; }
         }
         if (!matched) durSelEl.selectedIndex = -1;
+        /* Only the dropdown dims when the fit is off; the total-time
+           readout next to it always shows the live value. */
+        durSelEl.style.opacity = state.useTargetDuration ? '' : '0.55';
       }
-      if (durInputEl && document.activeElement !== durInputEl) durInputEl.value = String(tgt);
-      if (durCtlEl) durCtlEl.style.opacity = state.useTargetDuration ? '' : '0.55';
+      updateTotalTimeDisplay();
     }
     function setTargetDuration(sec){
       if (!isFinite(sec)) return;
@@ -9317,15 +9315,6 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       if (total > 0) setSpeed(total / tgt, false, true);
     }
     if (durSelEl) durSelEl.addEventListener('change', function(e){ setTargetDuration(parseFloat(e.target.value)); });
-    if (durInputEl){
-      var applyDurInput = function(){
-        var v = parseFloat(durInputEl.value);
-        if (isFinite(v) && v >= 5) setTargetDuration(v);
-        else syncDurUI();
-      };
-      durInputEl.addEventListener('change', applyDurInput);
-      durInputEl.addEventListener('keydown', function(e){ if (e.key === 'Enter'){ applyDurInput(); durInputEl.blur(); } });
-    }
     syncDurUI();
     /* Loop playback is toggled only by the button in the transport
        (playback) bar, which writes state.loop; the animate loop
@@ -9345,6 +9334,28 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
     })();
     document.getElementById('autoFrame').addEventListener('change', function(e){ state.autoFrame = e.target.checked; });
     document.getElementById('showLabels').addEventListener('change', function(e){ state.showLabels = e.target.checked; });
+    /* Time Only lives ONLY here in Settings (there is no toggle
+       button on the HUD itself): when on, the Clock HUD — browser
+       and recording burn-in alike — shows just the date and time,
+       hiding the callsign + ALT / SPD / LOCAL sub row. Default is
+       off, so the HUD shows everything. */
+    function applyTimeOnly(){
+      var sub = document.querySelector('#bigClock .sub');
+      if (sub) sub.style.display = state.timeOnly ? 'none' : '';
+      /* Invalidate the recording HUD's cached strip so the next
+         draw picks the new layout up even mid-recording. */
+      if (typeof liveHudKey !== 'undefined') liveHudKey = '';
+    }
+    (function bindTimeOnly(){
+      var el = document.getElementById('timeOnly');
+      if (!el) return;
+      el.checked = !!state.timeOnly;
+      el.addEventListener('change', function(e){
+        state.timeOnly = !!e.target.checked;
+        applyTimeOnly();
+      });
+      applyTimeOnly();
+    })();
     (function bindShowFullRoutes(){
       var el = document.getElementById('showFullRoutes');
       if (!el) return;
@@ -10076,7 +10087,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       if (!liveHudCtx || !liveHudTex) return;
       var hud = lastHud || {};
       var key = [hud.date, hud.time, hud.alt, hud.spd, hud.local, hud.cs, hud.color,
-        liveHudW, liveHudH].join('|');
+        state.timeOnly ? 'T' : 'F', liveHudW, liveHudH].join('|');
       if (!force && key === liveHudKey) return;
       var nowMs = performance.now();
       if (!force && nowMs - liveHudLastDraw < 100) return; /* throttled: at most 10 uploads/sec */
@@ -10096,7 +10107,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
          worst in narrow portrait frames). The labels have NO
          background at all, in the browser and here alike: grey
          labels (#b8bec7), white values. */
-      var showSub = true;
+      var showSub = !state.timeOnly;
       var showCs = showSub && !!(hud.cs && String(hud.cs).trim());
       var csFont = '900 ' + (16 * s) + 'px "Noto Sans JP", sans-serif';
       var labFont = '700 ' + (13.5 * s) + 'px "JetBrains Mono", monospace';
