@@ -325,11 +325,11 @@
         <div class="cfg-grid">
           <div class="cfg">
             <label for="cfgSmoothHalfSec">移動平均 前後 <span class="unit">秒</span></label>
-            <input type="number" id="cfgSmoothHalfSec" value="4" min="0" max="60" step="1" />
+            <input type="number" id="cfgSmoothHalfSec" value="5" min="0" max="60" step="1" />
           </div>
           <div class="cfg">
             <label>合計</label>
-            <p class="num" id="smoothTotalLabel" style="margin:6px 0 0;font-size:15px;font-weight:600;">合計8秒 / 前後4秒</p>
+            <p class="num" id="smoothTotalLabel" style="margin:6px 0 0;font-size:15px;font-weight:600;">合計10秒 / 前後5秒</p>
           </div>
         </div>
       </section>
@@ -346,7 +346,7 @@
         出力CSVの列は <code>Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction</code>。Altitude は m から ft、Speed は km/h から kt に換算し、Direction は連続する点から求めた方位角（0–359°）。時刻はすべて UTC。<br />
         ファイル名は <code>Callsign_YYYYMMDD_X.csv</code>（例: <code>ANA123_20261117_1.csv</code>）。日付は離陸日（UTC）で、<code>X</code> は同じコールサイン・同じ日のフライトに時系列順で付ける連番。<br />
         FIT では気圧高度（enhanced_altitude → altitude）と GPS高度（gps_metadata の enhanced_altitude、または developer field）の両方を保持し、選択した方を出力する（デフォルトは GPS）。選択した高度が無い区間は、もう一方の高度で代替する。<br />
-        GPS高度は、5点メディアンでスパイクを取り除いてから、中心移動平均（デフォルトは前後4秒・合計8秒）で平滑化する。平滑化した値は出力CSV・プレビュー・高度プロファイルのすべてに使う。気圧高度は平滑化しない。<br />
+        GPS高度は、5点メディアンでスパイクを取り除いてから、中心移動平均（デフォルトは前後5秒・合計10秒）で平滑化する。平滑化した値は出力CSV・プレビュー・高度プロファイルのすべてに使う。気圧高度は平滑化しない。<br />
         処理はすべてこのページ内で行い、ファイルは外部に送信されない。
       </p>
     </main>
@@ -381,13 +381,13 @@
         };
       }
       /* GPS smoothing half-width in seconds (one side of the centred
-         moving average). Default 4 s per side = 8 s total. 0 disables
+         moving average). Default 5 s per side = 10 s total. 0 disables
          the moving average (the median spike filter still applies). */
       function getSmoothHalfSec() {
         var el = document.getElementById("cfgSmoothHalfSec");
-        if (!el) return 4;
+        if (!el) return 5;
         var v = parseFloat(el.value);
-        if (!isFinite(v)) return 4;
+        if (!isFinite(v)) return 5;
         return Math.min(60, Math.max(0, v));
       }
       function getSmoothHalfMs() { return getSmoothHalfSec() * 1000; }
@@ -501,7 +501,7 @@
            1. Median filter over 5 points (i-2 .. i+2) to remove
               isolated spikes.
            2. Centred moving average over ±halfMs by timestamp
-              (default ±4 s = 8 s total; the half-width is set in
+              (default ±5 s = 10 s total; the half-width is set in
               seconds in the smoothing settings) to smooth the
               remaining jitter.
          The unsmoothed GPS altitude is kept in eleGpsRaw so the width
@@ -513,7 +513,7 @@
          and the altitude profile all use the same smoothed GPS
          altitude. */
       function smoothGpsAltitude(points, halfMs) {
-        if (typeof halfMs !== "number" || !isFinite(halfMs) || halfMs < 0) halfMs = 4000;
+        if (typeof halfMs !== "number" || !isFinite(halfMs) || halfMs < 0) halfMs = 5000;
         var n = points.length;
         if (!n) return;
         var i, j;
