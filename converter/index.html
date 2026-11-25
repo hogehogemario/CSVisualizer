@@ -257,7 +257,11 @@
       <div class="drop" id="drop" role="button" tabindex="0" aria-label="GPX / FITファイルを追加">
         <p class="big">GPX / FITファイルをドロップ、またはタップして選択</p>
         <p class="small">複数ファイルをまとめて追加できます（.gpx / .fit）</p>
-        <input type="file" id="fileInput" accept=".gpx,.fit,application/gpx+xml,text/xml" multiple />
+        <!-- No accept attribute on purpose: on iPad/iPhone Safari an accept
+             list is resolved to iOS file types, and binary .fit files (no
+             registered iOS type) end up greyed out and unselectable in the
+             Files picker. The intake below validates by content instead. -->
+        <input type="file" id="fileInput" multiple />
       </div>
 
       <section class="panel" aria-label="自動判定の設定">
@@ -1199,36 +1203,45 @@
       }
       function addFiles(fileList) {
         var cfg = getCfg();
-        var jobs = Array.prototype.slice.call(fileList)
-          .filter(function (f) { return /\.(gpx|fit)$/i.test(f.name) || /xml|gpx/.test(f.type); })
-          .map(function (file) {
-            var isFit = /\.fit$/i.test(file.name);
-            var reading = isFit ? file.arrayBuffer() : file.text();
-            return reading.then(function (data) {
-              var entry = {
-                id: nextId++, name: file.name, callsign: defaultCallsign(file.name),
-                error: null, flights: [],
-                isFit: isFit, altSource: isFit ? "gps" : "baro"
-              };
-              try {
-                entry.points = isFit ? parseFit(data) : parseGpx(data);
-                var d = computeDerived(entry.points);
-                entry.speeds = d.speeds; entry.bearings = d.bearings;
-                entry.flights = detectAll(entry, cfg);
-              } catch (err) {
-                entry.error = err.message || String(err);
-                entry.points = []; entry.speeds = []; entry.bearings = [];
-                entry.flights = [];
-              }
-              files.push(entry);
-            }).catch(function () {
-              files.push({
-                id: nextId++, name: file.name, callsign: defaultCallsign(file.name),
-                error: "ファイルを読めませんでした",
-                points: [], speeds: [], bearings: [], flights: []
-              });
+        var jobs = Array.prototype.slice.call(fileList).map(function (file) {
+          // Read every file as raw bytes and detect the format from the
+          // content, not from the name/MIME type alone: files picked on
+          // iPad (Files app, share sheet, downloads) can arrive with a
+          // generic type or a name without a usable extension, and the old
+          // name/type filter silently dropped them. FIT is recognised by
+          // its header signature (".FIT" at bytes 8-11); a ".fit" name is
+          // kept as a fallback hint. Anything else is tried as GPX text,
+          // and a file that parses as neither shows an error card instead
+          // of disappearing without feedback.
+          return file.arrayBuffer().then(function (buf) {
+            var bytes = new Uint8Array(buf);
+            var isFit = bytes.length >= 12 &&
+              bytes[8] === 0x2E && bytes[9] === 0x46 && bytes[10] === 0x49 && bytes[11] === 0x54; // ".FIT"
+            if (!isFit && /\.fit$/i.test(file.name || "")) isFit = true;
+            var entry = {
+              id: nextId++, name: file.name, callsign: defaultCallsign(file.name),
+              error: null, flights: [],
+              isFit: isFit, altSource: isFit ? "gps" : "baro"
+            };
+            try {
+              entry.points = isFit ? parseFit(buf) : parseGpx(new TextDecoder("utf-8").decode(buf));
+              var d = computeDerived(entry.points);
+              entry.speeds = d.speeds; entry.bearings = d.bearings;
+              entry.flights = detectAll(entry, cfg);
+            } catch (err) {
+              entry.error = err.message || String(err);
+              entry.points = []; entry.speeds = []; entry.bearings = [];
+              entry.flights = [];
+            }
+            files.push(entry);
+          }).catch(function () {
+            files.push({
+              id: nextId++, name: file.name, callsign: defaultCallsign(file.name),
+              error: "ファイルを読めませんでした",
+              points: [], speeds: [], bearings: [], flights: []
             });
           });
+        });
         Promise.all(jobs).then(render);
       }
 
