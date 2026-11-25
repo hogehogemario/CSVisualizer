@@ -111,14 +111,19 @@
       #bigClock .date{ font-size:12px; letter-spacing:.22em; color:var(--muted); font-weight:700; }
       #bigClock .time{ font-size:34px; font-weight:700; line-height:1.15; letter-spacing:.04em; }
       #bigClock .time small{ font-size:13px; color:var(--accent); font-weight:700; letter-spacing:.18em; }
-      #bigClock .sub{ display:flex; justify-content:center; align-items:center; gap:8px; flex-wrap:wrap; margin-top:2px; }
+      #bigClock .sub{ display:flex; justify-content:center; align-items:center; gap:8px; flex-wrap:nowrap; white-space:nowrap; margin-top:2px; }
       #bigClock .cs{
         display:inline-flex; align-items:center; gap:7px; font-size:13px; font-weight:900;
         background:#0c2033; border:1px solid var(--line-strong); border-radius:999px; padding:3px 12px;
       }
       #bigClock .cs .dot{ width:9px; height:9px; border-radius:50%; box-shadow:0 0 8px currentColor; }
-      #bigClock .kv{ font-size:12.5px; color:var(--muted); }
-      #bigClock .kv b{ color:var(--text); font-family:"JetBrains Mono",monospace; font-weight:700; }
+      #bigClock .kv{ font-size:12.5px; color:var(--muted); white-space:nowrap; }
+      #bigClock .kv b{ color:var(--text); font-family:"JetBrains Mono",monospace; font-weight:700; display:inline-block; text-align:right; }
+      /* Fixed-width HUD values: ALT is zero-padded to 5 digits and
+         SPD to 4 digits (plus unit), so each value always occupies
+         exactly the same width and the sub row never changes size. */
+      #bcAlt{ min-width:8ch; }
+      #bcSpd{ min-width:7ch; }
       #bigClock .kv .lab{ font-family:"JetBrains Mono",monospace; font-size:11px; font-weight:700; letter-spacing:.14em; color:#b8bec7; margin-right:4px; }
       #bigClock{ position:fixed; }
 
@@ -427,9 +432,9 @@
         /* Compact Clock HUD for phones: smaller type and tighter
            rows, still fixed to the top of the frame (via
            --frame-top), wide enough that the sub row (callsign /
-           ALT / SPD / LOCAL) stays on one line on a typical phone,
-           and never wider than the frame itself. On very narrow
-           screens the sub row wraps instead of overflowing. */
+           ALT / SPD) stays on one line on a typical phone,
+           and never wider than the frame itself. The sub row
+           never wraps, so the HUD always stays at three rows. */
         #bigClock{
           min-width:0;
           width:auto; max-width:min(calc(100vw - 16px), calc(var(--frame-w, 100vw) - 12px));
@@ -502,9 +507,8 @@
       <div class="time mono"><span id="bcTime">--:--:--</span> <small>UTC</small></div>
       <div class="sub">
         <span class="cs" id="bcCsPill"><span class="dot" id="bcCsDot"></span><span id="bcCs">—</span></span>
-        <span class="kv"><span class="lab">ALT</span><b id="bcAlt">—</b></span>
-        <span class="kv"><span class="lab">SPD</span><b id="bcSpd">—</b></span>
-        <span class="kv"><span class="lab">LOCAL</span><b id="bcLocal">—</b></span>
+        <span class="kv"><span class="lab">ALT</span><b id="bcAlt">----- ft</b></span>
+        <span class="kv"><span class="lab">SPD</span><b id="bcSpd">---- kt</b></span>
       </div>
     </section>
 
@@ -7576,6 +7580,14 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
     }
     function fmtInt(n){ return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
     function pad2(n){ return (n<10?'0':'')+n; }
+    /* Zero-padded fixed-width integer for the Clock HUD: ALT uses
+       5 digits (03625), SPD uses 4 digits (0133), so the HUD sub
+       row keeps a constant width and stays on one line. */
+    function padFixed(n, w){
+      var v = Math.round(n), s = Math.abs(v).toString();
+      while (s.length < w) s = '0' + s;
+      return (v < 0 ? '-' : '') + s;
+    }
     function fmtClock(sec){
       sec = Math.max(0, Math.floor(sec));
       var h = Math.floor(sec/3600), m = Math.floor(sec%3600/60), s = sec%60;
@@ -9352,7 +9364,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
     /* Time Only lives ONLY here in Settings (there is no toggle
        button on the HUD itself): when on, the Clock HUD — browser
        and recording burn-in alike — shows just the date and time,
-       hiding the callsign + ALT / SPD / LOCAL sub row. Default is
+       hiding the callsign + ALT / SPD sub row. Default is
        off, so the HUD shows everything. */
     function applyTimeOnly(){
       var sub = document.querySelector('#bigClock .sub');
@@ -10044,7 +10056,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
          portrait (short side = width). */
       liveHudS = Math.min(W, H) / 720;
       /* The strip must hold the whole Clock HUD panel — date, time
-         and the callsign + ALT/SPD/LOCAL row all sit inside the one
+         and the callsign + ALT/SPD row all sit inside the one
          panel, exactly as in the browser — so it is wider than the
          panel's minimum width to leave room for the full row. */
       liveHudW = Math.min(W, Math.ceil(620 * liveHudS));
@@ -10090,7 +10102,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
     function drawLiveHud(force){
       if (!liveHudCtx || !liveHudTex) return;
       var hud = lastHud || {};
-      var key = [hud.date, hud.time, hud.alt, hud.spd, hud.local, hud.cs, hud.color,
+      var key = [hud.date, hud.time, hud.alt, hud.spd, hud.cs, hud.color,
         state.timeOnly ? 'T' : 'F', liveHudW, liveHudH].join('|');
       if (!force && key === liveHudKey) return;
       var nowMs = performance.now();
@@ -10103,10 +10115,10 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       var color = hud.color || '#ff0000';
       /* The recording HUD is the SAME single panel as the browser
          Clock HUD: date, time (with its small UTC suffix) and one
-         sub row — callsign pill, then ALT / SPD / LOCAL — all
+         sub row — callsign pill, then ALT / SPD — all
          INSIDE the one dark panel. Nothing is drawn outside or
-         below the panel (an earlier version floated the ALT/SPD/
-         LOCAL row under the panel on white label chips; over a
+         below the panel (an earlier version floated the ALT/SPD
+         row under the panel on white label chips; over a
          bright chart that read as a second, broken HUD block,
          worst in narrow portrait frames). The labels have NO
          background at all, in the browser and here alike: grey
@@ -10120,9 +10132,8 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       var subW = 0, pillW = 0;
       if (showSub){
         segs = [
-          { lab:'ALT', val:(hud.alt || '—') },
-          { lab:'SPD', val:(hud.spd || '—') },
-          { lab:'LOCAL', val:(hud.local || '—') }
+          { lab:'ALT', val:(hud.alt || '----- ft') },
+          { lab:'SPD', val:(hud.spd || '---- kt') }
         ];
         segs.forEach(function(g){
           ctx.font = labFont; g.labW = ctx.measureText(g.lab).width;
@@ -10570,7 +10581,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
        so a big jump is absorbed by zooming instead of a camera snap. */
     var camDynZoom = 1;
     var lastPos = null;   // {lat, lon, fl} of the currently playing aircraft
-    var lastHud = { date:'', time:'', alt:'', spd:'', local:'', name:'', cs:'', color:'#ff0000' };
+    var lastHud = { date:'', time:'', alt:'', spd:'', name:'', cs:'', color:'#ff0000' };
     var statTick = 0, lastSegIndex = -1;
 
     function sampleAt(fl, frac){
@@ -10638,15 +10649,14 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
         bcEls.date.textContent = 'No time data';
         bcEls.time.textContent = '--:--:--';
       }
-      var locTxt = '—';
-      if (cur.t != null){
-        var locD = new Date((cur.t + cur.lon * 240) * 1000);
-        locTxt = pad2(locD.getUTCHours()) + ':' + pad2(locD.getUTCMinutes());
-      }
-      var bcLocalEl = document.getElementById('bcLocal');
-      if (bcLocalEl) bcLocalEl.textContent = locTxt;
-      bcEls.alt.textContent = fmtInt(cur.alt) + ' ft';
-      bcEls.spd.textContent = cur.spd ? fmtInt(cur.spd) + ' kt' : '—';
+      /* HUD values are fixed-width: ALT zero-padded to 5 digits,
+         SPD zero-padded to 4 digits (LOCAL is not shown). The
+         dash placeholders use the same digit count so the sub
+         row width never changes. */
+      var altTxt = (cur.alt != null && isFinite(cur.alt)) ? padFixed(cur.alt, 5) + ' ft' : '----- ft';
+      var spdTxt = (cur.spd != null && isFinite(cur.spd)) ? padFixed(cur.spd, 4) + ' kt' : '---- kt';
+      bcEls.alt.textContent = altTxt;
+      bcEls.spd.textContent = spdTxt;
       /* Callsign on the HUD: the Callsign from the CSV at this moment
          (same value as the 3D label above the aircraft), falling back
          to the flight's first Callsign, then the file name. */
@@ -10659,9 +10669,8 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       /* snapshot for the recording HUD burn-in */
       lastHud.date = bcEls.date.textContent;
       lastHud.time = bcEls.time.textContent;
-      lastHud.alt = fmtInt(cur.alt) + ' ft';
-      lastHud.spd = cur.spd ? fmtInt(cur.spd) + ' kt' : '—';
-      lastHud.local = locTxt;
+      lastHud.alt = altTxt;
+      lastHud.spd = spdTxt;
       lastHud.name = fl.name;
       lastHud.cs = csTxt;
       lastHud.color = fl.colorCss;
@@ -11015,7 +11024,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
         if (!currentFl){
           npName.textContent = '—';
           bcEls.time.textContent = '--:--:--'; bcEls.date.textContent = '----/--/--';
-          bcEls.alt.textContent = '—'; bcEls.spd.textContent = '—';
+          bcEls.alt.textContent = '----- ft'; bcEls.spd.textContent = '---- kt';
         }
         renderer.render(scene, camera);
         /* Screen recording only: draw the Clock HUD inside the
