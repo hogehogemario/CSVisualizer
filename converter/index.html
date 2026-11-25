@@ -318,6 +318,21 @@
         </div>
       </section>
 
+      <section class="panel" aria-label="GPS高度のスムージング設定">
+        <h2>GPS高度のスムージング</h2>
+        <p class="note">GPS高度の中心移動平均の幅です。気圧高度には適用されません。すでに読み込んだファイルにもすぐ反映されます。</p>
+        <div class="cfg-grid">
+          <div class="cfg">
+            <label for="cfgSmoothHalfSec">移動平均の幅（前後） <span class="unit">秒</span></label>
+            <input type="number" id="cfgSmoothHalfSec" value="5" min="0" max="60" step="1" />
+          </div>
+          <div class="cfg">
+            <label>合計の幅</label>
+            <p class="num" id="smoothTotalLabel" style="margin:6px 0 0;font-size:15px;font-weight:600;">合計 10 秒（前後 5 秒）</p>
+          </div>
+        </div>
+      </section>
+
       <div class="bulk">
         <span class="summary num" id="bulkSummary">ファイル未追加</span>
         <button class="btn primary" id="zipBtn" disabled>すべてZIPでダウンロード</button>
@@ -334,6 +349,7 @@
         日付はそのフライトの離陸日のUTC、<code>X</code> は同じコールサイン・同じ日付の中で時系列順に付けた連番です。<br />
         FITファイルでは、気圧高度（レコードの enhanced_altitude → altitude）とGPS高度（gps_metadata の enhanced_altitude、または developer field に記録されたGPS高度）を時刻で突き合わせて両方保持し、
         ファイルごとに選んだ方（デフォルトはGPS高度）をCSVの Altitude に出力します。選んだ高度が無い区間は、もう一方の高度を使います。<br />
+        GPS高度は、5点のメディアンフィルタでスパイクを除いたうえで、設定した幅の中心移動平均（デフォルトは前後5秒・合計10秒）で平滑化してから、CSV出力・プレビュー・高度プロファイルに使います。気圧高度は平滑化しません。<br />
         処理はこのページ内だけで完結し、ファイルが外部に送信されることはありません。
       </p>
     </main>
@@ -366,6 +382,27 @@
           marginBeforeSec: Math.max(0, num("cfgMarginBefore", 30)),
           marginAfterSec: Math.max(0, num("cfgMarginAfter", 30))
         };
+      }
+      /* GPS smoothing half-width in seconds (one side of the centred
+         moving average). Default 5 s per side = 10 s total, matching
+         the previous fixed behaviour. 0 disables the moving average
+         (the median spike filter still applies). */
+      function getSmoothHalfSec() {
+        var el = document.getElementById("cfgSmoothHalfSec");
+        if (!el) return 5;
+        var v = parseFloat(el.value);
+        if (!isFinite(v)) return 5;
+        return Math.min(60, Math.max(0, v));
+      }
+      function getSmoothHalfMs() { return getSmoothHalfSec() * 1000; }
+      function updateSmoothTotalLabel() {
+        var el = document.getElementById("smoothTotalLabel");
+        if (!el) return;
+        var h = getSmoothHalfSec();
+        var hs = (h % 1 === 0) ? String(h) : String(h);
+        var tot = h * 2;
+        var ts = (tot % 1 === 0) ? String(tot) : String(tot);
+        el.textContent = "合計 " + ts + " 秒（前後 " + hs + " 秒）";
       }
 
       /* ================= geo math ================= */
@@ -459,6 +496,80 @@
       function applyAltSource(f) {
         fillEle(f.points, f.altSource || "gps");
         f.flights.forEach(function (seg) { seg.csvDirty = true; });
+      }
+
+      /* GPS altitude smoothing (GPS altitude only; barometric altitude
+         is left untouched). No vertical-speed rate limit is applied, so
+         genuine rapid altitude changes (e.g. aerobatics) are preserved
+         in shape — only noise is reduced, in two steps:
+           1. Median filter over 5 points (i-2 .. i+2) to remove
+              isolated spikes.
+           2. Centred moving average over ±halfMs by timestamp
+              (default ±5 s = 10 s total; the half-width is set in
+              seconds in the smoothing settings) to smooth the
+              remaining jitter.
+         The unsmoothed GPS altitude is kept in eleGpsRaw so the width
+         can be changed after a file is loaded and the smoothing
+         re-applied from the raw values. Points without a GPS altitude
+         stay without one, and only points that have a GPS altitude
+         contribute to either step. The smoothed values replace
+         eleGps, so the CSV output (via fillEle), the preview stats
+         and the altitude profile all use the same smoothed GPS
+         altitude. */
+      function smoothGpsAltitude(points, halfMs) {
+        if (typeof halfMs !== "number" || !isFinite(halfMs) || halfMs < 0) halfMs = 5000;
+        var n = points.length;
+        if (!n) return;
+        var i, j;
+        // Preserve the raw GPS altitude on first smoothing.
+        for (i = 0; i < n; i++) {
+          if (points[i].eleGpsRaw === undefined) {
+            points[i].eleGpsRaw = (typeof points[i].eleGps === "number" && isFinite(points[i].eleGps)) ? points[i].eleGps : null;
+          }
+        }
+        // Step 1: 5-point median filter (from the raw values).
+        var med = new Array(n);
+        for (i = 0; i < n; i++) {
+          var own = points[i].eleGpsRaw;
+          if (typeof own !== "number" || !isFinite(own)) { med[i] = null; continue; }
+          var vals = [];
+          for (j = Math.max(0, i - 2); j <= Math.min(n - 1, i + 2); j++) {
+            var v = points[j].eleGpsRaw;
+            if (typeof v === "number" && isFinite(v)) vals.push(v);
+          }
+          vals.sort(function (a, b) { return a - b; });
+          var mid = vals.length >> 1;
+          med[i] = vals.length % 2 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
+        }
+        // Step 2: centred moving average, ±halfMs by timestamp (sliding window).
+        var smoothed = new Array(n);
+        var left = 0, right = -1, sum = 0, cnt = 0;
+        for (i = 0; i < n; i++) {
+          var t = points[i].t;
+          while (right + 1 < n && points[right + 1].t <= t + halfMs) {
+            right++;
+            if (med[right] !== null) { sum += med[right]; cnt++; }
+          }
+          while (left <= right && points[left].t < t - halfMs) {
+            if (med[left] !== null) { sum -= med[left]; cnt--; }
+            left++;
+          }
+          smoothed[i] = (med[i] !== null && cnt > 0) ? sum / cnt : null;
+        }
+        for (i = 0; i < n; i++) points[i].eleGps = smoothed[i];
+      }
+      /* Re-apply the current smoothing width to every loaded FIT file
+         (from its preserved raw GPS altitude) and refresh the effective
+         altitude + CSV caches. GPX files have no GPS altitude and are
+         skipped. */
+      function resmoothAllFiles() {
+        var halfMs = getSmoothHalfMs();
+        files.forEach(function (f) {
+          if (f.error || !f.isFit || !f.points || !f.points.length) return;
+          smoothGpsAltitude(f.points, halfMs);
+          fillEle(f.points, f.altSource || "gps");
+          f.flights.forEach(function (seg) { seg.csvDirty = true; });
+        });
       }
 
       /* ================= FIT parsing ================= */
@@ -747,6 +858,7 @@
             eleGps: (g !== null && isFinite(g)) ? g : null
           });
         });
+        smoothGpsAltitude(points, getSmoothHalfMs());
         fillEle(points, "gps"); // default source: GPS altitude
         var dedup = [];
         for (var m = 0; m < points.length; m++) {
@@ -1445,6 +1557,20 @@
           render();
         });
       });
+
+      // Smoothing width: keep the "合計" label in sync while typing, and
+      // re-smooth all loaded files from their raw GPS altitude on change.
+      (function () {
+        var smoothEl = document.getElementById("cfgSmoothHalfSec");
+        if (!smoothEl) return;
+        updateSmoothTotalLabel();
+        smoothEl.addEventListener("input", updateSmoothTotalLabel);
+        smoothEl.addEventListener("change", function () {
+          updateSmoothTotalLabel();
+          resmoothAllFiles();
+          render();
+        });
+      })();
 
       zipBtn.addEventListener("click", function () {
         var names = computeNames();
