@@ -276,11 +276,11 @@
   </head>
   <body>
     <main>
-      <p class="lead">GPS高度を使いたい場合は、Garminの Connect IQ データフィールド「Position Info」を使って記録してください。</p>
+      <p class="lead">GPS高度: Connect IQ「Position Info」で記録</p>
       <p class="rms-def"><span class="v">d(t) = GPS高度 − 気圧高度</span> ／ <span class="v">RMS = sqrt(mean(d²))</span> ／ <span class="v">平均誤差 = mean(d)</span></p>
-      <div class="drop" id="drop" role="button" tabindex="0" aria-label="GPX / FITファイルを追加">
-        <p class="big">GPX / FITファイルをドロップ、またはタップして選択</p>
-        <p class="small">複数ファイルをまとめて追加できます（.gpx / .fit / Activities.csv）</p>
+      <div class="drop" id="drop" role="button" tabindex="0" aria-label="ファイル追加">
+        <p class="big">GPX / FIT: ドロップ or タップ</p>
+        <p class="small">複数可（.gpx / .fit / Activities.csv）</p>
         <!-- No accept attribute on purpose: on iPad/iPhone Safari an accept
              list is resolved to iOS file types, and binary .fit files (no
              registered iOS type) end up greyed out and unselectable in the
@@ -288,69 +288,68 @@
         <input type="file" id="fileInput" multiple />
       </div>
 
-      <section class="panel" aria-label="自動判定の設定">
-        <h2>速度による自動判定</h2>
+      <section class="panel" aria-label="自動判定 設定">
+        <h2>自動判定（速度）</h2>
         <div class="cfg-grid">
           <div class="cfg">
-            <label for="cfgStartKmh">離陸の判定速度 <span class="unit">km/h</span></label>
+            <label for="cfgStartKmh">離陸速度 <span class="unit">km/h</span></label>
             <input type="number" id="cfgStartKmh" value="80" min="10" max="400" step="5" />
           </div>
           <div class="cfg">
-            <label for="cfgStartHold">離陸の維持時間 <span class="unit">秒</span></label>
+            <label for="cfgStartHold">離陸 維持時間 <span class="unit">秒</span></label>
             <input type="number" id="cfgStartHold" value="10" min="1" max="300" step="1" />
           </div>
           <div class="cfg">
-            <label for="cfgEndKmh">着陸の判定速度 <span class="unit">km/h</span></label>
+            <label for="cfgEndKmh">着陸速度 <span class="unit">km/h</span></label>
             <input type="number" id="cfgEndKmh" value="50" min="5" max="400" step="5" />
           </div>
           <div class="cfg">
-            <label for="cfgEndHold">着陸の維持時間 <span class="unit">秒</span></label>
+            <label for="cfgEndHold">着陸 維持時間 <span class="unit">秒</span></label>
             <input type="number" id="cfgEndHold" value="30" min="1" max="600" step="5" />
           </div>
           <div class="cfg">
-            <label for="cfgMarginBefore">前のマージン <span class="unit">秒</span></label>
+            <label for="cfgMarginBefore">前マージン <span class="unit">秒</span></label>
             <input type="number" id="cfgMarginBefore" value="30" min="0" max="3600" step="5" />
           </div>
           <div class="cfg">
-            <label for="cfgMarginAfter">後のマージン <span class="unit">秒</span></label>
+            <label for="cfgMarginAfter">後マージン <span class="unit">秒</span></label>
             <input type="number" id="cfgMarginAfter" value="30" min="0" max="3600" step="5" />
           </div>
         </div>
       </section>
 
-      <section class="panel" aria-label="GPS高度のスムージング設定">
-        <h2>GPS高度のスムージング</h2>
-        <p class="note">GPS高度の中心移動平均の幅です。気圧高度には適用されません。すでに読み込んだファイルにもすぐ反映されます。</p>
+      <section class="panel" aria-label="スムージング 設定">
+        <h2>GPS高度 スムージング</h2>
+        <p class="note">GPS高度のみ。気圧高度: 対象外。読込済みにも即反映。</p>
         <div class="cfg-grid">
           <div class="cfg">
-            <label for="cfgSmoothHalfSec">移動平均の幅（前後） <span class="unit">秒</span></label>
+            <label for="cfgSmoothHalfSec">移動平均 前後 <span class="unit">秒</span></label>
             <input type="number" id="cfgSmoothHalfSec" value="5" min="0" max="60" step="1" />
           </div>
           <div class="cfg">
-            <label>合計の幅</label>
-            <p class="num" id="smoothTotalLabel" style="margin:6px 0 0;font-size:15px;font-weight:600;">合計 10 秒（前後 5 秒）</p>
+            <label>合計</label>
+            <p class="num" id="smoothTotalLabel" style="margin:6px 0 0;font-size:15px;font-weight:600;">合計10秒 / 前後5秒</p>
           </div>
         </div>
       </section>
 
       <div class="bulk">
         <span class="summary num" id="bulkSummary">ファイル未追加</span>
-        <button class="btn primary" id="zipBtn" disabled>すべてZIPでダウンロード</button>
+        <button class="btn primary" id="zipBtn" disabled>全件ZIP</button>
       </div>
 
       <div id="fileList"></div>
-      <div class="empty" id="emptyState">GPX / FITファイルを追加すると、ファイルごとに検出したフライト（離陸・着陸時刻）がここに表示されます。</div>
+      <div class="empty" id="emptyState">ファイル追加 → 検出フライト（離陸・着陸時刻）を表示</div>
 
       <p class="spec">
         出力形式: <code>Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction</code> ／
-        Altitude はメートル→フィート、Speed は km/h→ノット、Direction は連続点から計算した方位角（0–359°）。
-        時刻はすべてUTCです。<br />
-        ファイル名は <code>Callsign_YYYYMMDD_X.csv</code>（例: <code>ANA123_20261117_1.csv</code>）で、
-        日付はそのフライトの離陸日のUTC、<code>X</code> は同じコールサイン・同じ日付の中で時系列順に付けた連番です。<br />
-        FITファイルでは、気圧高度（レコードの enhanced_altitude → altitude）とGPS高度（gps_metadata の enhanced_altitude、または developer field に記録されたGPS高度）を時刻で突き合わせて両方保持し、
-        ファイルごとに選んだ方（デフォルトはGPS高度）をCSVの Altitude に出力します。選んだ高度が無い区間は、もう一方の高度を使います。<br />
-        GPS高度は、5点のメディアンフィルタでスパイクを除いたうえで、設定した幅の中心移動平均（デフォルトは前後5秒・合計10秒）で平滑化してから、CSV出力・プレビュー・高度プロファイルに使います。気圧高度は平滑化しません。<br />
-        処理はこのページ内だけで完結し、ファイルが外部に送信されることはありません。
+        Altitude: m→ft ／ Speed: km/h→kt ／ Direction: 方位角 0–359°（連続点から算出）／ 時刻: UTC<br />
+        ファイル名: <code>Callsign_YYYYMMDD_X.csv</code>（例: <code>ANA123_20261117_1.csv</code>）／
+        日付: 離陸日（UTC）／ <code>X</code>: 同コールサイン・同日の時系列連番<br />
+        FIT: 気圧高度（enhanced_altitude → altitude）とGPS高度（gps_metadata enhanced_altitude / developer field）を保持 ／
+        選択した方を出力（デフォルト: GPS）／ 無い区間: もう一方で代替<br />
+        GPS高度: 5点メディアン（スパイク除去）→ 中心移動平均（デフォルト 前後5秒・合計10秒）／ 対象: CSV・プレビュー・高度プロファイル ／ 気圧高度: 平滑化なし<br />
+        処理: ページ内のみ ／ 外部送信なし
       </p>
     </main>
 
@@ -402,7 +401,7 @@
         var hs = (h % 1 === 0) ? String(h) : String(h);
         var tot = h * 2;
         var ts = (tot % 1 === 0) ? String(tot) : String(tot);
-        el.textContent = "合計 " + ts + " 秒（前後 " + hs + " 秒）";
+        el.textContent = "合計" + ts + "秒 / 前後" + hs + "秒";
       }
 
       /* ================= geo math ================= */
@@ -442,7 +441,7 @@
       /* ================= GPX parsing ================= */
       function parseGpx(text) {
         var doc = new DOMParser().parseFromString(text, "text/xml");
-        if (doc.getElementsByTagName("parsererror").length) throw new Error("XMLとして読み込めませんでした");
+        if (doc.getElementsByTagName("parsererror").length) throw new Error("XML読込エラー");
         var nodes = doc.getElementsByTagName("trkpt");
         if (!nodes.length) nodes = doc.getElementsByTagName("rtept");
         var points = [], lastEle = 0;
@@ -464,7 +463,7 @@
           if (dedup.length && dedup[dedup.length - 1].t === points[j].t) continue;
           dedup.push(points[j]);
         }
-        if (dedup.length < 2) throw new Error("時刻付きのトラックポイントが見つかりませんでした");
+        if (dedup.length < 2) throw new Error("時刻付きポイントなし");
         return dedup;
       }
 
@@ -604,11 +603,11 @@
       function parseFit(buffer) {
         var bytes = new Uint8Array(buffer);
         var dv = new DataView(buffer);
-        if (bytes.length < 12) throw new Error("ファイルが小さすぎます");
+        if (bytes.length < 12) throw new Error("ファイル過小");
         var headerSize = bytes[0];
-        if (headerSize !== 12 && headerSize !== 14) throw new Error("FITヘッダーを読み取れませんでした");
+        if (headerSize !== 12 && headerSize !== 14) throw new Error("FITヘッダー読取エラー");
         var sig = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]);
-        if (sig !== ".FIT") throw new Error("FITファイルではありません（署名が違います）");
+        if (sig !== ".FIT") throw new Error("FIT形式でない（署名不一致）");
         var dataSize = dv.getUint32(4, true);
         var pos = headerSize;
         var end = Math.min(bytes.length, headerSize + dataSize);
@@ -865,7 +864,7 @@
           if (dedup.length && dedup[dedup.length - 1].t === points[m].t) continue;
           dedup.push(points[m]);
         }
-        if (dedup.length < 2) throw new Error("位置情報つきのレコードが見つかりませんでした");
+        if (dedup.length < 2) throw new Error("位置レコードなし");
         // Name of the developer field the GPS altitude came from (null when
         // the file has none), so the file card can say which source
         // supplied the GPS side of the altitude selector.
@@ -1209,7 +1208,7 @@
         var paths = "";
         if (hasBaro) paths += '<path d="' + linePath("eleBaro") + '" fill="none" stroke="var(--chart)" stroke-width="1.6" stroke-dasharray="5 3"/>';
         if (hasGps) paths += '<path d="' + linePath("eleGps") + '" fill="none" stroke="var(--accent)" stroke-width="1.6"/>';
-        var legend = "高度プロファイル" +
+        var legend = "高度" +
           (hasGps ? '<span class="sw gps"></span>GPS高度' : "") +
           (hasBaro ? '<span class="sw baro"></span>気圧高度' : "");
         var midScale = (minV + maxV) / 2;
@@ -1323,10 +1322,10 @@
           });
         });
         bulkSummary.textContent = files.length
-          ? files.length + " ファイル · " + totalFlights + " フライト検出 · 出力対象 " + totalOut + " CSV / 合計 " + fmtNum(totalPts) + " 点"
+          ? files.length + "ファイル / " + totalFlights + "フライト / 出力 " + totalOut + " CSV / " + fmtNum(totalPts) + "点"
           : "ファイル未追加";
         zipBtn.disabled = totalOut === 0;
-        zipBtn.textContent = totalOut === 1 ? "すべてダウンロード（CSV 1件）" : "すべてZIPでダウンロード";
+        zipBtn.textContent = totalOut === 1 ? "ダウンロード（CSV 1件）" : "全件ZIP";
         listEl.innerHTML = files.map(function (f) { return cardHtml(f, names); }).join("");
       }
 
@@ -1335,10 +1334,10 @@
         var badge, badgeCls;
         if (seg.manual) { badge = "手動調整"; badgeCls = "manual"; }
         else if (seg.ok) { badge = "自動検出"; badgeCls = "auto"; }
-        else { badge = "飛行を検出できず全区間"; badgeCls = "failed"; }
+        else { badge = "未検出・全区間"; badgeCls = "failed"; }
 
         var takeoffTxt = seg.ok ? fmtDateTimeUTC(pts[seg.takeoffIdx].t) + " UTC" : "—";
-        var landingTxt = seg.ok && seg.landingIdx >= 0 ? fmtTimeUTC(pts[seg.landingIdx].t) + " UTC" : (seg.ok ? "記録終了まで" : "—");
+        var landingTxt = seg.ok && seg.landingIdx >= 0 ? fmtTimeUTC(pts[seg.landingIdx].t) + " UTC" : (seg.ok ? "記録終了" : "—");
         var flightTxt = "—";
         if (seg.ok) {
           var endT = seg.landingIdx >= 0 ? pts[seg.landingIdx].t : pts[n - 1].t;
@@ -1353,26 +1352,26 @@
           '<span class="flight-name mono" data-role="segName">' + esc(fname) + '</span></div>' +
 
           '<div class="stats">' +
-          '<div><span class="k">離陸（検出）</span><span class="v num">' + takeoffTxt + '</span></div>' +
-          '<div><span class="k">着陸（検出）</span><span class="v num">' + landingTxt + '</span><br>' +
+          '<div><span class="k">離陸</span><span class="v num">' + takeoffTxt + '</span></div>' +
+          '<div><span class="k">着陸</span><span class="v num">' + landingTxt + '</span><br>' +
             '<span>飛行時間 </span><span class="num">' + flightTxt + '</span></div>' +
-          '<div><span class="k">出力区間（UTC）</span><span class="v num">' +
+          '<div><span class="k">出力区間 UTC</span><span class="v num">' +
             fmtDateTimeUTC(outStart.t) + " 〜 " + fmtTimeUTC(outEnd.t) + '</span></div>' +
           '</div>' +
 
           '<div class="range-row">' +
-          '<div class="range-field"><label for="rs-' + f.id + '-' + si + '">開始（UTC）</label>' +
+          '<div class="range-field"><label for="rs-' + f.id + '-' + si + '">開始 UTC</label>' +
           '<input type="text" id="rs-' + f.id + '-' + si + '" data-role="rangeStart" value="' + fmtDateTimeUTC(outStart.t) + '" autocomplete="off" spellcheck="false" /></div>' +
-          '<div class="range-field"><label for="re-' + f.id + '-' + si + '">終了（UTC）</label>' +
+          '<div class="range-field"><label for="re-' + f.id + '-' + si + '">終了 UTC</label>' +
           '<input type="text" id="re-' + f.id + '-' + si + '" data-role="rangeEnd" value="' + fmtDateTimeUTC(outEnd.t) + '" autocomplete="off" spellcheck="false" /></div>' +
-          (seg.manual ? '<button class="btn small" data-act="auto">自動判定に戻す</button>' : "") +
-          '<span class="range-err" data-role="rangeErr">日時は「YYYY-MM-DD HH:MM:SS」形式で、記録の範囲内にしてください。</span>' +
+          (seg.manual ? '<button class="btn small" data-act="auto">自動判定へ</button>' : "") +
+          '<span class="range-err" data-role="rangeErr">形式: YYYY-MM-DD HH:MM:SS ／ 範囲内のみ</span>' +
           '</div>' +
 
           '<div class="flight-actions">' +
-          '<button class="btn small" data-act="download-seg">このフライトをCSVでダウンロード</button>' +
+          '<button class="btn small" data-act="download-seg">CSVダウンロード</button>' +
           '<button class="btn small toggle" data-act="toggle-seg" aria-pressed="' + (seg.included ? "true" : "false") + '">' +
-          (seg.included ? "ZIPに含める: ON" : "ZIPに含める: OFF") + '</button>' +
+          (seg.included ? "ZIP: ON" : "ZIP: OFF") + '</button>' +
           '</div>' +
           '</section>';
       }
@@ -1382,12 +1381,12 @@
           return '<article class="card" data-id="' + f.id + '">' +
             '<div class="card-head"><span class="fname">' + esc(f.name) + '</span><span class="spacer"></span>' +
             '<button class="linkbtn" data-act="remove">削除</button></div>' +
-            '<p class="err-text">読み込めませんでした: ' + esc(f.error) + "</p></article>";
+            '<p class="err-text">読込エラー: ' + esc(f.error) + "</p></article>";
         }
         var pts = f.points, n = pts.length;
         var flightBadge = f.flights.length > 1
-          ? '<span class="badge auto">' + f.flights.length + ' フライトに分割</span>'
-          : (f.flights[0].ok ? '<span class="badge auto">1 フライト</span>' : '<span class="badge failed">飛行を検出できず全区間</span>');
+          ? '<span class="badge auto">' + f.flights.length + 'フライト</span>'
+          : (f.flights[0].ok ? '<span class="badge auto">1フライト</span>' : '<span class="badge failed">未検出・全区間</span>');
         var incCount = f.flights.filter(function (s) { return s.included; }).length;
 
         var segsHtml = f.flights.map(function (seg, si) { return segHtml(f, seg, si, names); }).join("");
@@ -1402,12 +1401,12 @@
           var src = f.altSource === "baro" ? "baro" : "gps";
           altRowHtml =
             '<div class="alt-row"><div class="alt-field">' +
-            '<label for="alt-' + f.id + '">変換に使う高度（FIT）</label>' +
+            '<label for="alt-' + f.id + '">使用高度（FIT）</label>' +
             '<select id="alt-' + f.id + '" data-role="altSource">' +
-            '<option value="gps"' + (src === "gps" ? " selected" : "") + '>GPS高度（デフォルト）</option>' +
+            '<option value="gps"' + (src === "gps" ? " selected" : "") + '>GPS高度（既定）</option>' +
             '<option value="baro"' + (src === "baro" ? " selected" : "") + '>気圧高度</option>' +
             '</select></div>' +
-            '<p class="alt-note">気圧高度 <span class="v num">' + fmtNum(baroN) + ' 点</span> / GPS高度 <span class="v num">' + fmtNum(gpsN) + ' 点</span>が記録されています。</p>' +
+            '<p class="alt-note">気圧 <span class="v num">' + fmtNum(baroN) + '点</span> / GPS <span class="v num">' + fmtNum(gpsN) + '点</span></p>' +
             altDiffHtml(f) + '</div>';
         }
 
@@ -1417,17 +1416,17 @@
           '<button class="linkbtn" data-act="remove">削除</button></div>' +
 
           '<div class="cs-row"><div class="cs-field">' +
-          '<label for="cs-' + f.id + '">コールサイン（全フライト共通）</label>' +
+          '<label for="cs-' + f.id + '">コールサイン（共通）</label>' +
           '<input type="text" id="cs-' + f.id + '" data-role="callsign" value="' + esc(f.callsign) + '" maxlength="16" autocomplete="off" spellcheck="false" />' +
           "</div>" +
           '<button class="btn" data-act="download-file"' + (incCount ? "" : " disabled") + '>' +
-          (f.flights.length > 1 ? "このファイルのCSVをまとめてダウンロード（" + incCount + "件）" : "このファイルをCSVでダウンロード") + '</button></div>' +
+          (f.flights.length > 1 ? "一括ダウンロード（" + incCount + "件）" : "CSVダウンロード") + '</button></div>' +
 
           altRowHtml +
 
           '<div class="chart-wrap">' + sparklineSvg(f) +
           '<div class="chart-cap with-axis"><span class="num">' + fmtTimeUTC(pts[0].t) + '</span>' +
-          '<span class="mid">速度プロファイル（帯 = フライトごとの出力区間 / 破線 = 離陸判定速度）</span>' +
+          '<span class="mid">速度 ／ 帯: 出力区間 ／ 破線: 離陸速度</span>' +
           '<span class="num">' + fmtTimeUTC(pts[n - 1].t) + "</span></div>" +
           altitudeChartHtml(f) + "</div>" +
 
@@ -1720,7 +1719,7 @@
             files.push({
               id: nextId++, name: file.name, callsign: defaultCallsign(file.name),
               callsignManual: false,
-              error: "ファイルを読めませんでした",
+              error: "読込エラー",
               points: [], speeds: [], bearings: [], flights: []
             });
           });
