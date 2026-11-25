@@ -455,6 +455,19 @@
          pressurised aircraft, so the default source is the GPS altitude. */
       var FIT_EPOCH_MS = 631065600000; // 1989-12-31T00:00:00Z in Unix ms
       var FIT_TYPE_SIZE = { 0: 1, 1: 1, 2: 1, 3: 2, 4: 2, 5: 4, 6: 4, 7: 1, 8: 4, 9: 8, 10: 1, 11: 2, 12: 4, 13: 1, 14: 8, 15: 8, 16: 8 };
+      // FIT invalid-value sentinel per base type id. Some Connect IQ apps
+      // declare a field_description's scale/offset with integer base types
+      // (the spec prescribes float32) and store the type's invalid
+      // sentinel there to mean "no scaling" — e.g. the "Position Info"
+      // data field writes scale as uint8 255 and offset as sint8 127.
+      // Those are not real scaling parameters: applying them would decode
+      // its float32 altitude of 18.8 m as 18.8 / 255 - 127 = -126.9 m.
+      var FIT_INVALID = { 0: 255, 1: 127, 2: 255, 3: 32767, 4: 65535, 5: 2147483647, 6: 4294967295, 10: 0, 11: 0, 12: 0, 13: 255 };
+      function fitScaleParam(v, baseType) {
+        if (typeof v !== "number" || !isFinite(v)) return undefined;
+        if (typeof baseType === "number" && FIT_INVALID[baseType & 0x1F] === v) return undefined;
+        return v;
+      }
       function parseFit(buffer) {
         var bytes = new Uint8Array(buffer);
         var dv = new DataView(buffer);
@@ -554,8 +567,16 @@
             // start of the file, before any timestamp exists, so they are
             // handled here instead of after the timestamp resolution below.
             if (typeof vals[0] === "number" && typeof vals[1] === "number") {
+              // Scale/offset pass through fitScaleParam with the base
+              // type each was declared with, so an invalid sentinel
+              // stored there (see FIT_INVALID) becomes "not declared"
+              // instead of a bogus scaling parameter.
+              var declType = {};
+              def.fields.forEach(function (fd) { declType[fd.num] = fd.type; });
               fieldDescs[vals[0] + ":" + vals[1]] = {
-                baseType: vals[2], name: vals[3], scale: vals[6], offset: vals[7],
+                baseType: vals[2], name: vals[3],
+                scale: fitScaleParam(vals[6], declType[6]),
+                offset: fitScaleParam(vals[7], declType[7]),
                 units: vals[8], nativeMesg: vals[14], nativeField: vals[15]
               };
             }
@@ -655,13 +676,18 @@
           var out;
           if (devAlt.conv === "native") {
             // Native record altitude encoding: scale 5, offset 500.
-            var sc = (typeof devAlt.desc.scale === "number" && devAlt.desc.scale > 0) ? devAlt.desc.scale : 5;
-            var of = (typeof devAlt.desc.offset === "number") ? devAlt.desc.offset : 500;
+            var sc = (typeof devAlt.desc.scale === "number" && isFinite(devAlt.desc.scale) && devAlt.desc.scale > 0) ? devAlt.desc.scale : 5;
+            var of = (typeof devAlt.desc.offset === "number" && isFinite(devAlt.desc.offset)) ? devAlt.desc.offset : 500;
             out = v / sc - of;
           } else {
-            if (typeof devAlt.desc.scale === "number" && devAlt.desc.scale > 0 && devAlt.desc.scale !== 1) {
-              v = v / devAlt.desc.scale - (typeof devAlt.desc.offset === "number" ? devAlt.desc.offset : 0);
-            }
+            // desc.scale / desc.offset were sanitised when the
+            // field_description was stored: an invalid sentinel there
+            // (e.g. Position Info's 255 / 127) arrives here as
+            // undefined, i.e. "no scaling", and the stored float value
+            // is already in the declared unit.
+            var sc2 = (typeof devAlt.desc.scale === "number" && isFinite(devAlt.desc.scale) && devAlt.desc.scale > 0) ? devAlt.desc.scale : 1;
+            var of2 = (typeof devAlt.desc.offset === "number" && isFinite(devAlt.desc.offset)) ? devAlt.desc.offset : 0;
+            if (sc2 !== 1 || of2 !== 0) v = v / sc2 - of2;
             out = devAlt.conv === "ft" ? v / 3.28084 : v;
           }
           devAltCount++;
