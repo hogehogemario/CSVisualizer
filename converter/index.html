@@ -276,11 +276,11 @@
   </head>
   <body>
     <main>
-      <p class="lead">GPS高度: Connect IQ「Position Info」で記録</p>
+      <p class="lead">GPS高度を使うには、Garmin の Connect IQ データフィールド「Position Info」で記録する。</p>
       <p class="rms-def"><span class="v">d(t) = GPS高度 − 気圧高度</span> ／ <span class="v">RMS = sqrt(mean(d²))</span> ／ <span class="v">平均誤差 = mean(d)</span></p>
       <div class="drop" id="drop" role="button" tabindex="0" aria-label="ファイル追加">
-        <p class="big">GPX / FIT: ドロップ or タップ</p>
-        <p class="small">複数可（.gpx / .fit / Activities.csv）</p>
+        <p class="big">GPX / FIT ファイルをドロップ、またはタップして選択</p>
+        <p class="small">複数ファイルをまとめて読み込める（.gpx / .fit）。Activities.csv を一緒に読み込むと、アクティビティのタイトルがコールサインの初期値に入る。</p>
         <!-- No accept attribute on purpose: on iPad/iPhone Safari an accept
              list is resolved to iOS file types, and binary .fit files (no
              registered iOS type) end up greyed out and unselectable in the
@@ -290,6 +290,7 @@
 
       <section class="panel" aria-label="自動判定 設定">
         <h2>自動判定（速度）</h2>
+        <p class="note">速度が離陸速度以上を維持した時点を離陸、着陸速度未満を維持した時点を着陸として検出する。前マージン・後マージンは、出力区間に含める前後の余裕。</p>
         <div class="cfg-grid">
           <div class="cfg">
             <label for="cfgStartKmh">離陸速度 <span class="unit">km/h</span></label>
@@ -320,7 +321,7 @@
 
       <section class="panel" aria-label="スムージング 設定">
         <h2>GPS高度 スムージング</h2>
-        <p class="note">GPS高度のみ。気圧高度: 対象外。読込済みにも即反映。</p>
+        <p class="note">平滑化の対象はGPS高度のみで、気圧高度にはかけない。幅を変えると、読み込み済みのファイルにもすぐ反映される。</p>
         <div class="cfg-grid">
           <div class="cfg">
             <label for="cfgSmoothHalfSec">移動平均 前後 <span class="unit">秒</span></label>
@@ -339,17 +340,14 @@
       </div>
 
       <div id="fileList"></div>
-      <div class="empty" id="emptyState">ファイル追加 → 検出フライト（離陸・着陸時刻）を表示</div>
+      <div class="empty" id="emptyState">ファイルを追加すると、検出されたフライトと離陸・着陸時刻がここに表示される</div>
 
       <p class="spec">
-        出力形式: <code>Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction</code> ／
-        Altitude: m→ft ／ Speed: km/h→kt ／ Direction: 方位角 0–359°（連続点から算出）／ 時刻: UTC<br />
-        ファイル名: <code>Callsign_YYYYMMDD_X.csv</code>（例: <code>ANA123_20261117_1.csv</code>）／
-        日付: 離陸日（UTC）／ <code>X</code>: 同コールサイン・同日の時系列連番<br />
-        FIT: 気圧高度（enhanced_altitude → altitude）とGPS高度（gps_metadata enhanced_altitude / developer field）を保持 ／
-        選択した方を出力（デフォルト: GPS）／ 無い区間: もう一方で代替<br />
-        GPS高度: 5点メディアン（スパイク除去）→ 中心移動平均（デフォルト 前後5秒・合計10秒）／ 対象: CSV・プレビュー・高度プロファイル ／ 気圧高度: 平滑化なし<br />
-        処理: ページ内のみ ／ 外部送信なし
+        出力CSVの列は <code>Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction</code>。Altitude は m から ft、Speed は km/h から kt に換算し、Direction は連続する点から求めた方位角（0–359°）。時刻はすべて UTC。<br />
+        ファイル名は <code>Callsign_YYYYMMDD_X.csv</code>（例: <code>ANA123_20261117_1.csv</code>）。日付は離陸日（UTC）で、<code>X</code> は同じコールサイン・同じ日のフライトに時系列順で付ける連番。<br />
+        FIT では気圧高度（enhanced_altitude → altitude）と GPS高度（gps_metadata の enhanced_altitude、または developer field）の両方を保持し、選択した方を出力する（デフォルトは GPS）。選択した高度が無い区間は、もう一方の高度で代替する。<br />
+        GPS高度は、5点メディアンでスパイクを取り除いてから、中心移動平均（デフォルトは前後5秒・合計10秒）で平滑化する。平滑化した値は出力CSV・プレビュー・高度プロファイルのすべてに使う。気圧高度は平滑化しない。<br />
+        処理はすべてこのページ内で行い、ファイルは外部に送信されない。
       </p>
     </main>
 
@@ -1365,7 +1363,7 @@
           '<div class="range-field"><label for="re-' + f.id + '-' + si + '">終了 UTC</label>' +
           '<input type="text" id="re-' + f.id + '-' + si + '" data-role="rangeEnd" value="' + fmtDateTimeUTC(outEnd.t) + '" autocomplete="off" spellcheck="false" /></div>' +
           (seg.manual ? '<button class="btn small" data-act="auto">自動判定へ</button>' : "") +
-          '<span class="range-err" data-role="rangeErr">形式: YYYY-MM-DD HH:MM:SS ／ 範囲内のみ</span>' +
+          '<span class="range-err" data-role="rangeErr">YYYY-MM-DD HH:MM:SS の形式で、記録の範囲内の時刻を入力する</span>' +
           '</div>' +
 
           '<div class="flight-actions">' +
@@ -1406,7 +1404,7 @@
             '<option value="gps"' + (src === "gps" ? " selected" : "") + '>GPS高度（既定）</option>' +
             '<option value="baro"' + (src === "baro" ? " selected" : "") + '>気圧高度</option>' +
             '</select></div>' +
-            '<p class="alt-note">気圧 <span class="v num">' + fmtNum(baroN) + '点</span> / GPS <span class="v num">' + fmtNum(gpsN) + '点</span></p>' +
+            '<p class="alt-note">気圧高度 <span class="v num">' + fmtNum(baroN) + '点</span> ／ GPS高度 <span class="v num">' + fmtNum(gpsN) + '点</span></p>' +
             altDiffHtml(f) + '</div>';
         }
 
@@ -1426,7 +1424,7 @@
 
           '<div class="chart-wrap">' + sparklineSvg(f) +
           '<div class="chart-cap with-axis"><span class="num">' + fmtTimeUTC(pts[0].t) + '</span>' +
-          '<span class="mid">速度 ／ 帯: 出力区間 ／ 破線: 離陸速度</span>' +
+          '<span class="mid">速度プロファイル（帯は出力区間、破線は離陸速度）</span>' +
           '<span class="num">' + fmtTimeUTC(pts[n - 1].t) + "</span></div>" +
           altitudeChartHtml(f) + "</div>" +
 
