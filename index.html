@@ -97,65 +97,30 @@
 
       /* Big UTC clock — fixed to the TOP of the 3D frame in every
          aspect (never docked above the transport bar): layoutStage()
-         publishes the frame's on-screen top edge and size as the
-         --frame-top / --frame-w / --frame-h custom properties, and
-         the HUD sits just inside that top edge, centred on the
-         frame. The fallbacks cover the first paint before the
-         script runs.
-         The HUD's SIZE — padding, panel width and every font —
-         scales with the FRAME via --fs (the frame's short side
-         relative to a 900px reference, published by layoutStage),
-         never with the browser window: a narrow 9:16 frame in a
-         wide window gets a proportionally small HUD, and a large
-         frame a larger one. The panel is sized to its widest row
-         (width:max-content, floored by min-width and capped at
-         the frame's width minus 12px) and the sub row NEVER
-         wraps, so the three rows (date / time / callsign +
-         ALT/SPD/LOCAL) stay three rows at every frame size.
-         (Plain shrink-to-fit sizing let left:50% halve the
-         available width on phones, pinning the panel to its
-         min-width floor while the sub row still needed more
-         room — LOCAL dropped to a fourth line.) On narrow
-         frames layoutStage() adds the frame-narrow class to
-         <html> and the compact tier below shrinks the sub
-         row's fonts, gaps and padding a step further, so the
-         row fits inside the frame-wide panel. */
+         publishes the frame's on-screen top edge and width as the
+         --frame-top / --frame-w custom properties, and the HUD sits
+         just inside that top edge, centred on the frame. The
+         fallbacks cover the first paint before the script runs. */
       #bigClock{
         left:50%; transform:translateX(-50%);
-        top:calc(var(--frame-top, 0px) + max(6px, calc(10px * var(--fs, 1))));
+        top:calc(var(--frame-top, 0px) + 10px);
         z-index:40;
-        padding:calc(10px * var(--fs, 1)) calc(22px * var(--fs, 1)) calc(12px * var(--fs, 1));
-        text-align:center; pointer-events:none;
-        width:max-content;
-        min-width:min(calc(430px * var(--fs, 1)), calc(var(--frame-w, 100vw) - 12px));
-        max-width:calc(var(--frame-w, 100vw) - 12px);
+        padding:10px 22px 12px; text-align:center; pointer-events:none;
+        min-width:min(430px, 92vw, calc(var(--frame-w, 100vw) - 12px));
       }
-      #bigClock .date{ font-size:clamp(9px, calc(12px * var(--fs, 1)), 15px); letter-spacing:.22em; color:var(--muted); font-weight:700; }
-      #bigClock .time{ font-size:clamp(19px, calc(30px * var(--fs, 1)), 40px); font-weight:700; line-height:1.15; letter-spacing:.04em; }
-      #bigClock .time small{ font-size:clamp(10px, calc(13px * var(--fs, 1)), 16px); color:var(--accent); font-weight:700; letter-spacing:.18em; }
-      #bigClock .sub{ display:flex; justify-content:center; align-items:center; gap:calc(8px * var(--fs, 1)); flex-wrap:nowrap; margin-top:2px; }
+      #bigClock .date{ font-size:12px; letter-spacing:.22em; color:var(--muted); font-weight:700; }
+      #bigClock .time{ font-size:34px; font-weight:700; line-height:1.15; letter-spacing:.04em; }
+      #bigClock .time small{ font-size:13px; color:var(--accent); font-weight:700; letter-spacing:.18em; }
+      #bigClock .sub{ display:flex; justify-content:center; align-items:center; gap:8px; flex-wrap:wrap; margin-top:2px; }
       #bigClock .cs{
-        display:inline-flex; align-items:center; gap:calc(7px * var(--fs, 1)); font-size:clamp(10.5px, calc(12.5px * var(--fs, 1)), 15px); font-weight:900; white-space:nowrap;
-        background:#0c2033; border:1px solid var(--line-strong); border-radius:999px; padding:calc(3px * var(--fs, 1)) calc(12px * var(--fs, 1));
+        display:inline-flex; align-items:center; gap:7px; font-size:13px; font-weight:900;
+        background:#0c2033; border:1px solid var(--line-strong); border-radius:999px; padding:3px 12px;
       }
-      #bigClock .cs .dot{ width:clamp(6px, calc(9px * var(--fs, 1)), 11px); height:clamp(6px, calc(9px * var(--fs, 1)), 11px); border-radius:50%; box-shadow:0 0 8px currentColor; }
-      #bigClock .kv{ font-size:clamp(10.5px, calc(12px * var(--fs, 1)), 14.5px); color:var(--muted); white-space:nowrap; }
+      #bigClock .cs .dot{ width:9px; height:9px; border-radius:50%; box-shadow:0 0 8px currentColor; }
+      #bigClock .kv{ font-size:12.5px; color:var(--muted); }
       #bigClock .kv b{ color:var(--text); font-family:"JetBrains Mono",monospace; font-weight:700; }
-      #bigClock .kv .lab{ font-family:"JetBrains Mono",monospace; font-size:clamp(9px, calc(10.5px * var(--fs, 1)), 12.5px); font-weight:700; letter-spacing:.14em; color:#b8bec7; margin-right:calc(4px * var(--fs, 1)); }
+      #bigClock .kv .lab{ font-family:"JetBrains Mono",monospace; font-size:11px; font-weight:700; letter-spacing:.14em; color:#b8bec7; margin-right:4px; }
       #bigClock{ position:fixed; }
-      /* Compact sub-row tier for narrow frames (the frame-narrow
-         class is toggled by layoutStage from the FRAME's width,
-         not the window's, so a narrow 9:16 frame on a wide
-         desktop gets it too): smaller sub-row fonts, tighter
-         gaps and less panel / pill padding, so callsign +
-         ALT/SPD/LOCAL still fits on the one sub row — the HUD
-         keeps its three rows instead of wrapping LOCAL onto a
-         fourth line. */
-      html.frame-narrow #bigClock{ padding-left:calc(12px * var(--fs, 1)); padding-right:calc(12px * var(--fs, 1)); }
-      html.frame-narrow #bigClock .sub{ gap:calc(5px * var(--fs, 1)); }
-      html.frame-narrow #bigClock .cs{ font-size:clamp(9px, calc(11px * var(--fs, 1)), 13px); gap:calc(5px * var(--fs, 1)); padding:calc(2px * var(--fs, 1)) calc(8px * var(--fs, 1)); }
-      html.frame-narrow #bigClock .kv{ font-size:clamp(9px, calc(10.5px * var(--fs, 1)), 12.5px); }
-      html.frame-narrow #bigClock .kv .lab{ font-size:clamp(8px, calc(9px * var(--fs, 1)), 11px); letter-spacing:.08em; margin-right:calc(3px * var(--fs, 1)); }
 
       /* Left: flights. Its z-index sits ABOVE the Clock HUD (40):
          on phones the panel's top-left corner overlaps the
@@ -245,8 +210,8 @@
         border-radius:8px; padding:0 8px; font-size:13px; min-height:36px;
       }
       .speed-num{
-        width:clamp(58px, calc(76px * var(--fs, 1)), 84px); background:#0b1727; color:var(--text); border:1px solid var(--line-strong);
-        border-radius:8px; padding:0 calc(7px * var(--fs, 1)); font-size:clamp(11.5px, calc(12.5px * var(--fs, 1)), 14px); min-height:clamp(33px, calc(36px * var(--fs, 1)), 42px);
+        width:76px; background:#0b1727; color:var(--text); border:1px solid var(--line-strong);
+        border-radius:8px; padding:0 7px; font-size:12.5px; min-height:36px;
       }
       .speed-num:focus{ border-color:var(--accent); outline:none; }
       #fullRouteControls{ border-left:2px solid var(--line); padding-left:10px; margin-left:2px; }
@@ -261,54 +226,48 @@
       .statgrid .v small{ font-size:10.5px; color:var(--muted); font-weight:500; }
       .statgrid .v .sub{ display:block; font-size:10.5px; color:var(--muted); font-weight:500; margin-top:1px; }
 
-      /* Bottom: transport. Like the Clock HUD, the whole bar —
-         its width, padding, buttons and every font — scales with
-         the FRAME via --fs (see the #bigClock comment), not with
-         the browser window, so the playback window stays in
-         proportion to the video area it belongs to. Sizes are
-         clamped to keep every control tappable and legible on
-         small frames. */
+      /* Bottom: transport */
       #transport{
         left:50%; transform:translateX(-50%); bottom:14px;
-        width:min(calc(1060px * var(--fs, 1)), calc(100vw - 28px));
-        padding:calc(12px * var(--fs, 1)) calc(16px * var(--fs, 1)) calc(13px * var(--fs, 1));
+        width:min(1060px, calc(100vw - 28px));
+        padding:12px 16px 13px;
       }
-      #transport .top{ display:flex; align-items:center; gap:calc(10px * var(--fs, 1)); flex-wrap:wrap; }
+      #transport .top{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
       #playBtn{
-        width:clamp(38px, calc(48px * var(--fs, 1)), 58px); height:clamp(38px, calc(48px * var(--fs, 1)), 58px); min-height:clamp(38px, calc(48px * var(--fs, 1)), 58px); border-radius:50%; flex:none;
+        width:48px; height:48px; min-height:48px; border-radius:50%; flex:none;
         background:var(--accent); border:0; color:#04222b; cursor:pointer;
         display:flex; align-items:center; justify-content:center;
         box-shadow:0 6px 22px rgba(34,211,238,.35);
       }
       #playBtn:hover{ background:#4be0f7; }
-      #playBtn svg{ width:clamp(16px, calc(20px * var(--fs, 1)), 24px); height:clamp(16px, calc(20px * var(--fs, 1)), 24px); }
+      #playBtn svg{ width:20px; height:20px; }
       .tbtn{
-        width:clamp(32px, calc(38px * var(--fs, 1)), 46px); height:clamp(32px, calc(38px * var(--fs, 1)), 46px); min-height:clamp(32px, calc(38px * var(--fs, 1)), 46px); border-radius:10px; flex:none;
+        width:38px; height:38px; min-height:38px; border-radius:10px; flex:none;
         background:#0d1a2a; border:1px solid var(--line-strong); color:var(--text);
         cursor:pointer; display:flex; align-items:center; justify-content:center;
       }
       .tbtn:hover{ border-color:var(--accent); }
-      .tbtn svg{ width:clamp(13px, calc(16px * var(--fs, 1)), 19px); height:clamp(13px, calc(16px * var(--fs, 1)), 19px); }
+      .tbtn svg{ width:16px; height:16px; }
       /* Loop toggle in the transport bar: filled accent while ON
          (the default), plain dark button while OFF. */
       .tbtn[aria-pressed="true"]{ background:var(--accent); border-color:var(--accent); color:#04222b; }
       .tbtn[aria-pressed="true"]:hover{ background:#4be0f7; border-color:#4be0f7; }
       .tbtn[aria-pressed="false"]{ color:var(--muted); }
-      #clock{ font-size:clamp(11.5px, calc(13px * var(--fs, 1)), 15px); min-width:calc(148px * var(--fs, 1)); }
+      #clock{ font-size:13px; min-width:148px; }
       #clock .cur{ color:var(--text); font-weight:700; }
       #clock .tot{ color:var(--faint); }
-      #nowPlaying{ font-size:clamp(11px, calc(12.5px * var(--fs, 1)), 14.5px); color:var(--muted); font-weight:700; display:flex; align-items:center; gap:calc(7px * var(--fs, 1)); min-width:0; }
-      #nowPlaying .dot{ width:clamp(7px, calc(9px * var(--fs, 1)), 11px); height:clamp(7px, calc(9px * var(--fs, 1)), 11px); border-radius:50%; box-shadow:0 0 8px currentColor; flex:none; }
-      #nowPlaying .nm{ color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:calc(300px * var(--fs, 1)); }
+      #nowPlaying{ font-size:12.5px; color:var(--muted); font-weight:700; display:flex; align-items:center; gap:7px; min-width:0; }
+      #nowPlaying .dot{ width:9px; height:9px; border-radius:50%; box-shadow:0 0 8px currentColor; flex:none; }
+      #nowPlaying .nm{ color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:300px; }
       #transport .spacer{ flex:1; }
-      #progressWrap{ margin-top:calc(10px * var(--fs, 1)); display:flex; align-items:center; gap:calc(10px * var(--fs, 1)); }
-      #progress{ flex:1; height:clamp(22px, calc(30px * var(--fs, 1)), 34px); accent-color:var(--accent); cursor:pointer; }
-      #pct{ font-size:clamp(10.5px, calc(12px * var(--fs, 1)), 14px); color:var(--muted); min-width:calc(42px * var(--fs, 1)); text-align:right; }
-      #segBar{ display:flex; gap:3px; margin-top:2px; height:clamp(15px, calc(20px * var(--fs, 1)), 24px); }
+      #progressWrap{ margin-top:10px; display:flex; align-items:center; gap:10px; }
+      #progress{ flex:1; height:30px; accent-color:var(--accent); cursor:pointer; }
+      #pct{ font-size:12px; color:var(--muted); min-width:42px; text-align:right; }
+      #segBar{ display:flex; gap:3px; margin-top:2px; height:20px; }
       #segBar .segblk{
         border-radius:5px; min-width:14px; position:relative; overflow:hidden;
-        display:flex; align-items:center; padding:0 calc(7px * var(--fs, 1));
-        font-size:clamp(8.5px, calc(10px * var(--fs, 1)), 12px); font-weight:700; color:rgba(2,12,18,.85);
+        display:flex; align-items:center; padding:0 7px;
+        font-size:10px; font-weight:700; color:rgba(2,12,18,.85);
         opacity:.38; transition:opacity .2s;
         white-space:nowrap;
       }
@@ -319,16 +278,15 @@
       #camSeg button{ flex:1 1 30%; }
       #mapCredit{
         display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;
-        margin-top:calc(7px * var(--fs, 1)); font-size:clamp(9px, calc(10px * var(--fs, 1)), 12px); color:var(--faint); line-height:1.4;
+        margin-top:7px; font-size:10px; color:var(--faint); line-height:1.4;
       }
       #creditText{ text-align:right; }
-      #screenRecBtn{ min-height:clamp(38px, calc(46px * var(--fs, 1)), 52px); font-size:clamp(12.5px, calc(14.5px * var(--fs, 1)), 17px); font-weight:800; padding:0 calc(20px * var(--fs, 1)); border-radius:clamp(10px, calc(12px * var(--fs, 1)), 14px); }
-      .inline-ctl{ display:flex; align-items:center; gap:calc(7px * var(--fs, 1)); font-size:clamp(10.5px, calc(12px * var(--fs, 1)), 14px); color:var(--muted); font-weight:600; }
+      #screenRecBtn{ min-height:46px; font-size:14.5px; font-weight:800; padding:0 20px; border-radius:12px; }
+      .inline-ctl{ display:flex; align-items:center; gap:7px; font-size:12px; color:var(--muted); font-weight:600; }
       .inline-ctl select{
         background:#0b1727; color:var(--text); border:1px solid var(--line-strong); border-radius:8px;
-        padding:0 calc(8px * var(--fs, 1)); font-size:clamp(11.5px, calc(12.5px * var(--fs, 1)), 14.5px); min-height:clamp(33px, calc(36px * var(--fs, 1)), 42px); cursor:pointer;
+        padding:0 8px; font-size:12.5px; min-height:36px; cursor:pointer;
       }
-      #speedSlider{ width:clamp(64px, calc(104px * var(--fs, 1)), 120px); }
 
 
       /* Screen-recording bar — always visible while a real-time
@@ -399,10 +357,7 @@
         display:flex; align-items:center; justify-content:center;
       }
       .panel-close:hover{ color:var(--text); border-color:var(--line-strong); background:#132539; }
-      /* Right padding leaves room for the bar's x close button;
-         it scales with --fs like the rest of the bar but never
-         drops below what the button needs. */
-      #transport{ padding-right:max(36px, calc(46px * var(--fs, 1))); }
+      #transport{ padding-right:46px; }
       /* Pull tabs: when a panel is closed with its x button, a
          small tab stays on the screen edge nearest the panel's
          home position (Flight List: top-left edge, Settings:
@@ -422,20 +377,19 @@
       .pull-tab svg{ flex:none; }
       #tabFlights{ left:0; top:14px; writing-mode:vertical-rl; border-left:0; border-radius:0 10px 10px 0; }
       #tabSettings{ right:0; top:14px; writing-mode:vertical-rl; border-right:0; border-radius:10px 0 0 10px; }
-      #tabTransport{ left:50%; transform:translateX(-50%); bottom:0; border-bottom:0; border-radius:10px 10px 0 0; padding:calc(7px * var(--fs, 1)) calc(16px * var(--fs, 1)); min-height:clamp(32px, calc(36px * var(--fs, 1)), 40px); font-size:clamp(10px, calc(11px * var(--fs, 1)), 13px); }
+      #tabTransport{ left:50%; transform:translateX(-50%); bottom:0; border-bottom:0; border-radius:10px 10px 0 0; padding:7px 16px; min-height:36px; }
       /* Below desktop width the Clock HUD STAYS fixed to the top of
-         the frame (it never docks above the transport bar). Its
-         size is NOT adjusted here: the HUD and the transport bar
-         scale with the frame itself via --fs at every window
-         width, so viewport breakpoints no longer resize them.
-         The toast and the recording bar still stack directly
-         above the transport bar: their offset is NOT a guessed
-         pixel value — the script measures the transport bar
-         itself into the --th custom property (see
-         syncChromeVars), so they follow the bar's real height
-         however its rows wrap. The fallbacks only cover the
+         the frame (it never docks above the transport bar); only its
+         padding and type shrink a little. The toast and the
+         recording bar still stack directly above the transport bar:
+         their offset is NOT a guessed pixel value — the script
+         measures the transport bar itself into the --th custom
+         property (see syncChromeVars), so they follow the bar's real
+         height however its rows wrap. The fallbacks only cover the
          first paint before the script runs. */
       @media (max-width: 1180px){
+        #bigClock{ padding:8px 16px 9px; }
+        #bigClock .time{ font-size:26px; }
         #statsPanel{ display:none; }
         #toast{ bottom:calc(var(--th, 150px) + 14px); }
         #screenRecBar{ bottom:calc(var(--th, 150px) + 12px); }
@@ -470,21 +424,35 @@
           align-items:center; justify-content:center; cursor:pointer;
           backdrop-filter:blur(14px);
         }
-        /* The Clock HUD needs no phone-specific sizing here: it
-           is fixed to the top of the frame (via --frame-top), its
-           type and padding scale with the frame via --fs, the
-           panel is sized to its widest row up to the frame's own
-           width, and narrow frames get the compact sub-row tier
-           via the frame-narrow class layoutStage() toggles — so
-           the sub row (callsign / ALT / SPD / LOCAL) stays on
-           one line and the HUD keeps its three rows. */
+        /* Compact Clock HUD for phones: smaller type and tighter
+           rows, still fixed to the top of the frame (via
+           --frame-top), wide enough that the sub row (callsign /
+           ALT / SPD / LOCAL) stays on one line on a typical phone,
+           and never wider than the frame itself. On very narrow
+           screens the sub row wraps instead of overflowing. */
+        #bigClock{
+          min-width:0;
+          width:auto; max-width:min(calc(100vw - 16px), calc(var(--frame-w, 100vw) - 12px));
+          padding:7px 12px 8px;
+        }
+        #bigClock .date{ font-size:10px; letter-spacing:.14em; }
+        #bigClock .time{ font-size:21px; }
+        #bigClock .time small{ font-size:11px; }
+        #bigClock .sub{ gap:5px 7px; margin-top:1px; }
+        #bigClock .cs{ font-size:11px; padding:2px 9px; gap:5px; }
+        #bigClock .cs .dot{ width:7px; height:7px; }
+        #bigClock .kv{ font-size:10.5px; }
+        #bigClock .kv .lab{ font-size:9.5px; margin-right:3px; }
         #creditText{ display:none; }
-        /* Transport LAYOUT at phone width (sizes themselves come
-           from the frame-scaled base rules): the control groups
-           wrap inside the bar instead of pushing the speed
-           group's numeric input off the right edge. */
-        #transport{ bottom:8px; }
+        /* Compact transport: the speed control group wraps inside
+           the bar instead of pushing its numeric input off the
+           right edge, and every row is a little shorter, so the
+           whole bottom stack (bar + HUD) stays as low as possible. */
+        #transport{ bottom:8px; width:calc(100vw - 16px); padding:9px 40px 9px 12px; }
         #transport .top{ gap:8px; }
+        #playBtn{ width:42px; height:42px; min-height:42px; }
+        #playBtn svg{ width:17px; height:17px; }
+        .tbtn{ width:34px; height:34px; min-height:34px; }
         #clock{ display:none; }
         #nowPlaying{ flex:1 1 110px; }
         #nowPlaying .np-label{ display:none; }
@@ -495,7 +463,15 @@
            speed") stay visible; the slider shrinks so the speed
            group still fits on one line. */
         #speedSlider{ width:56px !important; }
-        #segBar .segblk{ min-width:10px; }
+        .inline-ctl select{ min-height:34px; font-size:11.5px; }
+        .speed-num{ width:58px; min-height:34px; }
+        #screenRecBtn{ min-height:38px; font-size:13px; padding:0 14px; border-radius:10px; }
+        #progressWrap{ margin-top:6px; }
+        #progress{ height:24px; }
+        #pct{ min-width:36px; }
+        #segBar{ height:16px; margin-top:1px; }
+        #segBar .segblk{ font-size:9px; padding:0 5px; min-width:10px; }
+        #mapCredit{ margin-top:4px; }
         /* On small screens the Flight List and Settings pull tabs
            are NOT shown: the existing top-left / top-right icon
            toggles already bring those panels back (their click
@@ -760,7 +736,7 @@
         </div>
         <div class="inline-ctl">
           <label for="speedSlider">Playback speed</label>
-          <input type="range" id="speedSlider" min="0" max="120" step="1" value="47" aria-label="Playback speed slider" title="Playback speed (log scale, 0.5x to 100,000x on the slider — there is no upper limit: type any speed in the box next to it)" />
+          <input type="range" id="speedSlider" min="0" max="120" step="1" value="47" aria-label="Playback speed slider" title="Playback speed (log scale, 0.5x to 100,000x on the slider — there is no upper limit: type any speed in the box next to it)" style="width:104px" />
           <input type="number" id="speedInput" class="speed-num mono" min="0.25" step="any" value="60" inputmode="decimal" aria-label="Custom playback speed (no upper limit)" title="Type any playback speed and press Enter — there is no upper limit" />
           <span aria-hidden="true" style="margin-left:-4px">×</span>
         </div>
@@ -7782,32 +7758,6 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       var docStyle = document.documentElement.style;
       docStyle.setProperty('--frame-top', frameRect.top + 'px');
       docStyle.setProperty('--frame-w', frameRect.width + 'px');
-      docStyle.setProperty('--frame-h', frameRect.height + 'px');
-      /* Chrome scale for the Clock HUD and the transport bar:
-         their sizes (fonts included) follow the FRAME — the area
-         the video is drawn in — never the browser window. --fs is
-         the frame's short side relative to a 900px reference,
-         clamped so the chrome stays usable on very small frames
-         and does not balloon on very large ones. In 16:9 the
-         short side is the height; in 9:16 it is the width, which
-         is what keeps a narrow portrait frame's HUD and playback
-         bar proportionally small inside a wide desktop window.
-         The rect is the stage's DISPLAY size, so a boosted
-         recording resolution never rescales the on-screen chrome
-         (the recording HUD scales inside the canvas instead). */
-      var fsScale = Math.min(frameRect.width, frameRect.height) / 900;
-      fsScale = Math.max(0.6, Math.min(1.3, fsScale));
-      docStyle.setProperty('--fs', fsScale.toFixed(3));
-      /* Narrow frames get the Clock HUD's compact sub-row tier
-         (the html.frame-narrow CSS rules): below this frame width
-         the base sub-row sizes no longer fit callsign +
-         ALT/SPD/LOCAL on one line even with the panel stretched
-         to the frame's full width, so its fonts, gaps and
-         padding shrink a step further and the HUD keeps its
-         three rows (date / time / sub) instead of wrapping
-         LOCAL onto a fourth line. Keyed to the FRAME's width,
-         like everything else about the HUD's size. */
-      document.documentElement.classList.toggle('frame-narrow', frameRect.width < 600);
       if (camera){
         camera.aspect = VIEW_ASPECT;
         camera.fov = effectiveCamFovDeg();
@@ -10185,32 +10135,6 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
           ctx.font = csFont;
           pillW = 12 * s + 9 * s + 7 * s + ctx.measureText(String(hud.cs).trim()).width + 12 * s;
           subW += pillW + 8 * s;
-        }
-        /* Never let the sub row be clipped by the strip: if the
-           measured row is wider than the strip can hold (a very
-           long callsign can do this), shrink just the sub-row
-           fonts by the exact overflow factor and measure again.
-           The row then stays on ONE line inside the panel, so
-           the recording keeps the same three-row HUD as the
-           browser instead of cutting the row off at the edges. */
-        if (subW > liveHudW - 20 * s){
-          var fitMul = (liveHudW - 20 * s) / subW;
-          csFont = '900 ' + (16 * s * fitMul) + 'px "Noto Sans JP", sans-serif';
-          labFont = '700 ' + (13.5 * s * fitMul) + 'px "JetBrains Mono", monospace';
-          valFont = '700 ' + (15.5 * s * fitMul) + 'px "JetBrains Mono", monospace';
-          subW = 0; pillW = 0;
-          segs.forEach(function(g){
-            ctx.font = labFont; g.labW = ctx.measureText(g.lab).width;
-            ctx.font = valFont; g.valW = ctx.measureText(g.val).width;
-            g.w = g.labW + 4 * s + g.valW;
-            subW += g.w;
-          });
-          subW += 8 * s * (segs.length - 1);
-          if (showCs){
-            ctx.font = csFont;
-            pillW = 12 * s + 9 * s + 7 * s + ctx.measureText(String(hud.cs).trim()).width + 12 * s;
-            subW += pillW + 8 * s;
-          }
         }
       }
       var pw = Math.min(liveHudW, Math.max(400 * s, subW + 44 * s));
