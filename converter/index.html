@@ -280,7 +280,7 @@
       <p class="rms-def"><span class="v">d(t) = GPS高度 − 気圧高度</span> ／ <span class="v">RMS = sqrt(mean(d²))</span> ／ <span class="v">平均誤差 = mean(d)</span></p>
       <div class="drop" id="drop" role="button" tabindex="0" aria-label="GPX / FITファイルを追加">
         <p class="big">GPX / FITファイルをドロップ、またはタップして選択</p>
-        <p class="small">複数ファイルをまとめて追加できます（.gpx / .fit）</p>
+        <p class="small">複数ファイルをまとめて追加できます（.gpx / .fit / Activities.csv）</p>
         <!-- No accept attribute on purpose: on iPad/iPhone Safari an accept
              list is resolved to iOS file types, and binary .fit files (no
              registered iOS type) end up greyed out and unselectable in the
@@ -347,6 +347,10 @@
       // seg:  {takeoffIdx, landingIdx, startIdx, endIdx, ok, manual, included, csvCache, csvDirty}
       var files = [];
       var nextId = 1;
+      // Garmin Connect activities list (Activities.csv): [{t, title}]
+      // t is the activity start as a local-time epoch ms (see
+      // parseActivitiesCsv); matched titles become callsign defaults.
+      var activityTitles = [];
 
       var cfgIds = ["cfgStartKmh", "cfgStartHold", "cfgEndKmh", "cfgEndHold", "cfgMarginBefore", "cfgMarginAfter"];
       function getCfg() {
@@ -1338,6 +1342,7 @@
         if (!f || f.error) return;
         if (ev.target.dataset.role === "callsign") {
           f.callsign = ev.target.value.toUpperCase();
+          f.callsignManual = true;
           f.flights.forEach(function (seg) { seg.csvDirty = true; });
           // Refresh file names quietly without losing focus.
           var names = computeNames();
@@ -1451,6 +1456,87 @@
         downloadSegs(list, names);
       });
 
+      /* ================= Garmin Connect activities list ================= */
+      /* Activities.csv exported from Garmin Connect (Activities → All
+         Activities → Export CSV): first row is the header, Date is the
+         2nd column and Title the 4th. The Date is written in local time
+         (e.g. "2026-11-25 00:06:08"), while GPX/FIT recording times are
+         UTC, so a file's start time is compared as an epoch instant:
+         parsing the CSV date as a browser-local Date converts it to the
+         same epoch, and a file matches the activity whose Date is
+         closest to its start, within a few minutes. The matched Title
+         becomes that file's default callsign; the callsign stays
+         editable per file, and a callsign the user has already typed is
+         never overwritten. Files with no match keep the filename-derived
+         default. */
+      var ACTIVITY_MATCH_TOL_MS = 5 * 60 * 1000; // a few minutes
+      function parseCsvRows(text) {
+        var rows = [], row = [], field = "", inQ = false;
+        text = String(text).replace(/^\uFEFF/, "");
+        for (var i = 0; i < text.length; i++) {
+          var c = text[i];
+          if (inQ) {
+            if (c === '"') {
+              if (text[i + 1] === '"') { field += '"'; i++; }
+              else inQ = false;
+            } else field += c;
+          } else if (c === '"') {
+            inQ = true;
+          } else if (c === ",") {
+            row.push(field); field = "";
+          } else if (c === "\n") {
+            row.push(field); field = "";
+            rows.push(row); row = [];
+          } else if (c !== "\r") {
+            field += c;
+          }
+        }
+        if (field !== "" || row.length) { row.push(field); rows.push(row); }
+        return rows;
+      }
+      function parseLocalDateTimeMs(str) {
+        var m = /^(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(String(str || "").trim());
+        if (!m) return null;
+        var t = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)).getTime();
+        return isFinite(t) ? t : null;
+      }
+      function isActivitiesCsv(text) {
+        var firstLine = (String(text).split(/\r?\n/)[0] || "");
+        return /Activity Type/i.test(firstLine) && /Date/i.test(firstLine) && /Title/i.test(firstLine);
+      }
+      function parseActivitiesCsv(text) {
+        var rows = parseCsvRows(text);
+        if (!rows.length) return [];
+        var header = rows[0].map(function (h) { return String(h).trim().toLowerCase(); });
+        var dateIdx = header.indexOf("date");
+        var titleIdx = header.indexOf("title");
+        if (dateIdx < 0) dateIdx = 1;   // spec: Date is the 2nd column
+        if (titleIdx < 0) titleIdx = 3; // spec: Title is the 4th column
+        var out = [];
+        for (var i = 1; i < rows.length; i++) {
+          var title = String(rows[i][titleIdx] || "").trim();
+          var t = parseLocalDateTimeMs(rows[i][dateIdx]);
+          if (title && t !== null) out.push({ t: t, title: title });
+        }
+        return out;
+      }
+      function applyActivityTitles() {
+        if (!activityTitles.length) return;
+        files.forEach(function (f) {
+          if (f.error || f.callsignManual || !f.points || !f.points.length) return;
+          var startMs = f.points[0].t;
+          var best = null, bestDiff = Infinity;
+          activityTitles.forEach(function (a) {
+            var d = Math.abs(a.t - startMs);
+            if (d < bestDiff) { bestDiff = d; best = a; }
+          });
+          if (best && bestDiff <= ACTIVITY_MATCH_TOL_MS) {
+            f.callsign = best.title.toUpperCase();
+            f.flights.forEach(function (seg) { seg.csvDirty = true; });
+          }
+        });
+      }
+
       /* ================= file intake ================= */
       var dropEl = document.getElementById("drop");
       var fileInput = document.getElementById("fileInput");
@@ -1476,8 +1562,19 @@
             var isFit = bytes.length >= 12 &&
               bytes[8] === 0x2E && bytes[9] === 0x46 && bytes[10] === 0x49 && bytes[11] === 0x54; // ".FIT"
             if (!isFit && /\.fit$/i.test(file.name || "")) isFit = true;
+            // A Garmin Connect activities list is not a flight file: it
+            // only supplies callsign defaults, so it never becomes a card.
+            if (!isFit) {
+              var headText = new TextDecoder("utf-8").decode(buf.slice(0, 4096));
+              if (/\.csv$/i.test(file.name || "") && isActivitiesCsv(headText)) {
+                activityTitles = parseActivitiesCsv(new TextDecoder("utf-8").decode(buf));
+                applyActivityTitles();
+                return;
+              }
+            }
             var entry = {
               id: nextId++, name: file.name, callsign: defaultCallsign(file.name),
+              callsignManual: false,
               error: null, flights: [],
               isFit: isFit, altSource: isFit ? "gps" : "baro"
             };
@@ -1496,12 +1593,16 @@
           }).catch(function () {
             files.push({
               id: nextId++, name: file.name, callsign: defaultCallsign(file.name),
+              callsignManual: false,
               error: "ファイルを読めませんでした",
               points: [], speeds: [], bearings: [], flights: []
             });
           });
         });
-        Promise.all(jobs).then(render);
+        // Apply after every job settles so an Activities.csv dropped
+        // together with flight files still matches all of them,
+        // regardless of the order the reads finished in.
+        Promise.all(jobs).then(function () { applyActivityTitles(); render(); });
       }
 
       dropEl.addEventListener("click", function () { fileInput.click(); });
