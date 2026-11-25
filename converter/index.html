@@ -1155,7 +1155,12 @@
          shared scale, with the same flight-range bands as the speed chart.
          Series with no data in the file are omitted (GPX files have no GPS
          altitude, so only the barometric line appears). Returns the SVG
-         plus its caption, or "" when the file has no altitude at all. */
+         plus its caption, or "" when the file has no altitude at all.
+         The shared scale is derived from the barometric series and the
+         RAW (unsmoothed) GPS altitude — never from the smoothed GPS
+         values — so changing the smoothing width cannot rescale the
+         chart: the barometric line is drawn at exactly the same pixels
+         whatever the width, and only the GPS line changes shape. */
       function altitudeChartHtml(f) {
         var W = 600, H = 64, pts = f.points, n = pts.length;
         var t0 = pts[0].t, t1 = pts[n - 1].t, span = Math.max(1, t1 - t0);
@@ -1169,8 +1174,13 @@
           }
           if (typeof p.eleGps === "number" && isFinite(p.eleGps)) {
             hasGps = true;
-            if (p.eleGps < minV) minV = p.eleGps;
-            if (p.eleGps > maxV) maxV = p.eleGps;
+            // Scale contribution from the raw GPS altitude, not the
+            // smoothed one (see the note above): the smoothed extremes
+            // shrink as the width grows, which used to rescale the whole
+            // chart and visibly move the barometric line with it.
+            var gScale = (typeof p.eleGpsRaw === "number" && isFinite(p.eleGpsRaw)) ? p.eleGpsRaw : p.eleGps;
+            if (gScale < minV) minV = gScale;
+            if (gScale > maxV) maxV = gScale;
           }
         }
         if (!hasBaro && !hasGps) return "";
