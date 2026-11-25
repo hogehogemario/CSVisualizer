@@ -277,7 +277,7 @@
   <body>
     <main>
       <p class="lead">GPS高度を使いたい場合は、Garminの Connect IQ データフィールド「Position Info」を使って記録してください。</p>
-      <p class="rms-def">GPS高度と気圧高度の差 <span class="v">d(t) = GPS高度 − 気圧高度</span> ／ <span class="v">RMS = sqrt(mean(d²))</span> はズレの大きさ全体（与圧の系統的なズレ＋GPSのノイズ）を表し、<span class="v">平均誤差 = mean(d)</span>（符号付き）は系統的なズレの向きと大きさを表します。集計は離陸〜着陸の区間だけを対象にファイル全体で一括して行い、地上・タクシー部分とGPS高度がないポイントは除きます。単位は m / ft です。</p>
+      <p class="rms-def"><span class="v">d(t) = GPS高度 − 気圧高度</span> ／ <span class="v">RMS = sqrt(mean(d²))</span> ／ <span class="v">平均誤差 = mean(d)</span></p>
       <div class="drop" id="drop" role="button" tabindex="0" aria-label="GPX / FITファイルを追加">
         <p class="big">GPX / FITファイルをドロップ、またはタップして選択</p>
         <p class="small">複数ファイルをまとめて追加できます（.gpx / .fit）</p>
