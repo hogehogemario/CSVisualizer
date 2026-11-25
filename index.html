@@ -696,6 +696,13 @@
         </select>
       </div>
       <div class="ctl">
+        <label for="recFps">Recording Frame Rate</label>
+        <select class="sel" id="recFps">
+          <option value="60" selected>60 fps (Smoother Motion)</option>
+          <option value="30">30 fps (Lighter Encoding Load)</option>
+        </select>
+      </div>
+      <div class="ctl">
         <label for="recBitrate">Recording Bitrate</label>
         <select class="sel" id="recBitrate">
           <option value="standard" selected>Standard (Default — 5–28 Mbps by Size)</option>
@@ -7727,7 +7734,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
        per frame — no second pass, no intermediate canvas, no
        copies. Playback timing never depends on the render rate
        (the animate loop advances by wall-clock dt and
-       captureStream(30) simply samples the newest finished frame),
+       captureStream(fps) simply samples the newest finished frame),
        so if the GPU cannot keep up at the boosted size the
        RECORDING drops frames while playback keeps its speed —
        smoothness of the live view always wins. liveRecResKey is
@@ -10076,26 +10083,32 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
        Smoothness of the live playback is the top priority, so the
        design adds as little work to the render loop as possible:
        - The WebGL canvas's own stream is captured directly with
-         captureStream(30) and handed to MediaRecorder; the browser
+         captureStream(fps) and handed to MediaRecorder; the browser
          encodes it (hardware where available) off the critical
          path. There is NO intermediate canvas, NO per-frame
          drawImage / toBlob / pixel copy in JavaScript, and the
          animate loop is never paused, stepped or re-driven.
-       - The stream is capped at 30 fps and the bitrate is kept
-         moderate for the canvas size, so encoding stays cheap;
-         if the encoder still cannot keep up, captureStream /
-         MediaRecorder drop RECORDING frames — playback frames are
-         never dropped or delayed for the recording.
+       - The stream runs at the Recording Frame Rate setting
+         (60 fps by default; 30 fps selectable for a lighter
+         encoding load) and the bitrate is kept moderate for the
+         canvas size, so encoding stays cheap; if the encoder
+         still cannot keep up, captureStream / MediaRecorder drop
+         RECORDING frames — playback frames are never dropped or
+         delayed for the recording.
        - Settings can raise the quality above that baseline:
-         Recording Bitrate picks a higher tier table
-         (recBitrateFor — encoder-side only, no render cost), and
-         Recording Resolution freezes a larger drawing buffer for
-         the duration of the recording (recBufferDims /
-         layoutStage). Both default to the historical behaviour
-         (Display Size / Standard). If a boosted resolution
-         outruns the GPU, frames are dropped on the recording
-         side only — playback is clock-driven (wall-clock dt) and
-         never waits for the renderer or the encoder.
+         Recording Frame Rate picks the capture rate (60 fps by
+         default, 30 fps for a lighter encoding load; at 60 fps
+         the tier bitrate is scaled up 1.5x so the bits per frame
+         stay close to the 30 fps baseline), Recording Bitrate
+         picks a higher tier table (recBitrateFor — encoder-side
+         only, no render cost), and Recording Resolution freezes
+         a larger drawing buffer for the duration of the recording
+         (recBufferDims / layoutStage). Resolution and Bitrate
+         default to the historical behaviour (Display Size /
+         Standard). If a boosted resolution outruns the GPU,
+         frames are dropped on the recording side only — playback
+         is clock-driven (wall-clock dt) and never waits for the
+         renderer or the encoder.
        - The only addition to the render loop while recording is
          the Clock HUD pass: the HUD is drawn inside the WebGL
          canvas as a single small textured quad, so the recording contains
@@ -10112,8 +10125,8 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
        END HOLD: when the playhead reaches the end, the recorder
        is NOT stopped in that same instant. Stopping immediately
        cut off the last fraction of a second: the stop happened
-       before the final frame was even rendered, and the 30 fps
-       captureStream had not yet sampled the last frames the
+       before the final frame was even rendered, and the capture
+       stream had not yet sampled the last frames the
        viewer saw, so the saved video ended early. Instead the
        playhead parks on the final frame (playback paused,
        recording still live) for a short hold (~0.9 s) while the
@@ -10125,6 +10138,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
        simply continues. */
     var liveRecActive = false, liveRecRecorder = null, liveRecChunks = [], liveRecStream = null;
     var liveRecExt = 'webm', liveRecStartAt = 0, liveRecTimer = null;
+    var liveRecFps = 60; /* frame rate frozen when recording starts (Settings > Recording Frame Rate) */
     var liveRecHoldUntil = 0; /* end-hold deadline (performance.now ms), 0 = not holding */
     var screenRecBtn = document.getElementById('screenRecBtn');
     var screenRecBar = document.getElementById('screenRecBar');
@@ -10370,8 +10384,15 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       if (applicableKf) applyKeyframe(applicableKf);
       setPlaying(true);
       drawLiveHud(true);
+      /* Recording Frame Rate: freeze the selected rate for this
+         recording (60 fps by default; 30 fps halves the number of
+         frames the encoder must process, for machines whose
+         encoder cannot keep up at 60). Changing the setting
+         mid-recording never alters the running stream. */
+      var fpsEl = document.getElementById('recFps');
+      liveRecFps = fpsEl && fpsEl.value === '30' ? 30 : 60;
       var stream = null;
-      try { stream = renderer.domElement.captureStream(30); } catch (e) { stream = null; }
+      try { stream = renderer.domElement.captureStream(liveRecFps); } catch (e) { stream = null; }
       if (!stream){ stopRecBoost(); showDomHudAfterRec(); toast('Could not start screen recording'); return; }
       liveRecStream = stream;
       var track = stream.getVideoTracks ? stream.getVideoTracks()[0] : null;
@@ -10379,6 +10400,11 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       var W = renderer.domElement.width, H = renderer.domElement.height, px = W * H;
       var brEl = document.getElementById('recBitrate');
       var bps = recBitrateFor(px, brEl ? brEl.value : 'standard');
+      /* At 60 fps the same total bitrate would halve the bits per
+         frame, so scale the tier up by 1.5x to keep per-frame
+         quality close to the 30 fps baseline (temporal redundancy
+         means a full 2x is not needed). */
+      if (liveRecFps >= 60) bps = Math.round(bps * 1.5);
       var rec = null;
       try { rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: bps }); }
       catch (e) {
@@ -10400,7 +10426,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       screenRecBtn.textContent = '■ Stop Recording';
       screenRecBtn.classList.add('on');
       screenRecBar.classList.add('show');
-      if (screenRecMetaEl) screenRecMetaEl.textContent = W + '×' + H + ' · 30 fps · ' + (Math.round(bps / 100000) / 10) + ' Mbps · ' + liveRecExt.toUpperCase();
+      if (screenRecMetaEl) screenRecMetaEl.textContent = W + '×' + H + ' · ' + liveRecFps + ' fps · ' + (Math.round(bps / 100000) / 10) + ' Mbps · ' + liveRecExt.toUpperCase();
       liveRecStartAt = performance.now();
       updateScreenRecTime();
       liveRecTimer = setInterval(updateScreenRecTime, 250);
@@ -10415,7 +10441,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
        above) instead of stopping now — stopping in this instant
        truncated the last fraction of a second of the video,
        because the final frame had not been rendered yet and the
-       30 fps capture had not sampled the last frames shown.
+       capture stream had not sampled the last frames shown.
        The animate loop performs the actual stop once the hold
        expires; it also cancels the hold if the user resumes
        playback or scrubs, in which case recording continues. */
