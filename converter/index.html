@@ -183,6 +183,21 @@
       .alt-note { font-size: 12.5px; color: var(--muted); flex: 1 1 240px; margin: 0; }
       .alt-note .v { color: var(--ink); font-weight: 600; }
 
+      .diff-box {
+        margin-top: 12px; padding: 12px 14px;
+        border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);
+      }
+      .diff-box.overall { background: var(--surface); }
+      .diff-title { font-size: 13px; font-weight: 700; margin: 0 0 2px; }
+      .diff-sub { font-size: 12px; color: var(--muted); margin: 0 0 10px; line-height: 1.55; }
+      .diff-grid {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 8px 18px; font-size: 13.5px;
+      }
+      .diff-grid .k { color: var(--muted); font-size: 12px; display: block; }
+      .diff-grid .v { font-weight: 700; }
+      .diff-note { font-size: 12px; color: var(--muted); margin: 8px 0 0; line-height: 1.55; }
+
       .chart-wrap { margin-top: 14px; }
       .chart-wrap svg { display: block; width: 100%; height: 64px; }
       .chart-cap { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
@@ -252,6 +267,7 @@
         FITファイルの場合は、<strong>気圧高度（レコードの高度）とGPS高度（gps_metadata、または Connect IQ「Position Info」等の developer field に記録されたGPS高度）の両方をプレビューに表示</strong>し、
         変換に使う高度をファイルごとに選べます（<strong>デフォルトはGPS高度</strong>）。気圧高度は与圧機では機内の与圧高度になってしまうため、通常はGPS高度がおすすめです。
         選んだ高度が無い区間は、もう一方の高度にフォールバックします。
+        あわせて、各フライトの離陸〜着陸の区間だけを対象に、<strong>GPS高度と気圧高度の差 d(t) = GPS高度 − 気圧高度の RMS と符号付き平均</strong>を表示します（m / ft 両方、複数フライトがある場合は区間ごと＋全区間合計）。
       </p>
 
       <div class="drop" id="drop" role="button" tabindex="0" aria-label="GPX / FITファイルを追加">
@@ -315,7 +331,9 @@
         ファイル名は <code>Callsign_YYYYMMDD_X.csv</code>（例: <code>ANA123_20261117_1.csv</code>）で、
         日付はそのフライトの離陸日のUTC、<code>X</code> は同じコールサイン・同じ日付の中で時系列順に付けた連番です。<br />
         FITファイルでは、気圧高度（レコードの enhanced_altitude → altitude）とGPS高度（gps_metadata の enhanced_altitude、または developer field に記録されたGPS高度）を時刻で突き合わせて両方保持し、
-        ファイルごとに選んだ方（デフォルトはGPS高度）をCSVの Altitude に出力します。選んだ高度が無い区間は、もう一方の高度を使います。
+        ファイルごとに選んだ方（デフォルトはGPS高度）をCSVの Altitude に出力します。選んだ高度が無い区間は、もう一方の高度を使います。<br />
+        高度差の評価: 各ポイントで d(t) = GPS高度 − 気圧高度 を取り、検出されたフライト区間（離陸〜着陸）全体で RMS = sqrt(mean(d²)) と符号付きの平均 mean(d) を集計します。
+        地上・タクシー部分は差がほぼ0で結果を薄めるため集計から除き、GPS高度がないポイントも除きます。複数フライトがある場合は区間ごとと全区間合計の両方を表示し、単位は m と ft の両方です。
         処理はこのページ内だけで完結し、ファイルが外部に送信されることはありません。
       </p>
     </main>
@@ -911,6 +929,81 @@
         if (mVal === null || mVal === undefined || !isFinite(mVal)) return "—";
         return fmtNum(mVal) + " m (" + fmtNum(mVal * 3.28084) + " ft)";
       }
+      /* ---- GPS − barometric difference: d(t) = eleGps − eleBaro ---- */
+      function fmtSignedInt(n) {
+        var r = Math.round(n);
+        var s = Math.abs(r).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        if (r > 0) return "+" + s;
+        if (r < 0) return "-" + s;
+        return "0";
+      }
+      function fmtMeanDiffM(mVal) {
+        if (mVal === null || mVal === undefined || !isFinite(mVal)) return "—";
+        return fmtSignedInt(mVal) + " m (" + fmtSignedInt(mVal * 3.28084) + " ft)";
+      }
+      function fmtRmsDiffM(mVal) {
+        if (mVal === null || mVal === undefined || !isFinite(mVal)) return "—";
+        return fmtNum(mVal) + " m (" + fmtNum(mVal * 3.28084) + " ft)";
+      }
+      /* Flight interval for the difference aggregate: the detected
+         takeoff → landing span only, so ground / taxi points (where the
+         difference is ~0 and would dilute the result) are excluded.
+         When no flight was detected, fall back to the output range.
+         When landing was not detected, the flight runs to the end of
+         the recording. */
+      function diffRangeForSeg(f, seg) {
+        if (seg.ok && seg.takeoffIdx >= 0) {
+          var to = seg.landingIdx >= 0 ? seg.landingIdx : f.points.length - 1;
+          return { from: seg.takeoffIdx, to: to, isFlight: true };
+        }
+        return { from: seg.startIdx, to: seg.endIdx, isFlight: false };
+      }
+      function calcDiffStats(f, fromIdx, toIdx) {
+        var count = 0, sum = 0, sumSq = 0;
+        for (var i = fromIdx; i <= toIdx; i++) {
+          var p = f.points[i];
+          if (typeof p.eleGps !== "number" || !isFinite(p.eleGps)) continue;
+          if (typeof p.eleBaro !== "number" || !isFinite(p.eleBaro)) continue;
+          var d = p.eleGps - p.eleBaro;
+          count++; sum += d; sumSq += d * d;
+        }
+        if (!count) return { count: 0, meanM: null, rmsM: null, sum: 0, sumSq: 0 };
+        return { count: count, meanM: sum / count, rmsM: Math.sqrt(sumSq / count), sum: sum, sumSq: sumSq };
+      }
+      function diffStatsForSeg(f, seg) {
+        var r = diffRangeForSeg(f, seg);
+        var st = calcDiffStats(f, r.from, r.to);
+        st.from = r.from; st.to = r.to; st.isFlight = r.isFlight;
+        return st;
+      }
+      function diffStatsForFile(f) {
+        var count = 0, sum = 0, sumSq = 0;
+        f.flights.forEach(function (seg) {
+          var r = diffRangeForSeg(f, seg);
+          var st = calcDiffStats(f, r.from, r.to);
+          count += st.count; sum += st.sum; sumSq += st.sumSq;
+        });
+        if (!count) return { count: 0, meanM: null, rmsM: null };
+        return { count: count, meanM: sum / count, rmsM: Math.sqrt(sumSq / count) };
+      }
+      function diffBoxHtml(title, sub, ds, isOverall) {
+        var body;
+        if (!ds || ds.count === 0) {
+          body = '<p class="diff-note" style="margin-top:0">フライト区間にGPS高度のあるポイントがないため、集計できません。</p>';
+        } else {
+          body =
+            '<div class="diff-grid">' +
+            '<div><span class="k">RMS — sqrt(mean(d²))</span><span class="v num">' + fmtRmsDiffM(ds.rmsM) + '</span></div>' +
+            '<div><span class="k">平均 — mean(d)（符号付き）</span><span class="v num">' + fmtMeanDiffM(ds.meanM) + '</span></div>' +
+            '<div><span class="k">対象ポイント</span><span class="v num">' + fmtNum(ds.count) + ' 点</span></div>' +
+            '</div>' +
+            '<p class="diff-note">RMSはズレの大きさ全体（与圧の系統的なズレ＋GPSのノイズ）を1つの数字で表し、平均は系統的なズレの向きと大きさを表します。</p>';
+        }
+        return '<div class="diff-box' + (isOverall ? " overall" : "") + '">' +
+          '<p class="diff-title">' + title + '</p>' +
+          (sub ? '<p class="diff-sub">' + sub + '</p>' : "") +
+          body + '</div>';
+      }
       /* Side-by-side barometric / GPS altitude preview for FIT files. */
       function altPreviewText(f, seg) {
         function row(i) {
@@ -930,9 +1023,22 @@
         for (i = seg.startIdx; i <= Math.min(seg.endIdx, seg.startIdx + 4); i++) idxs.push(i);
         var tail = [];
         for (i = Math.max(seg.startIdx + 5, seg.endIdx - 2); i <= seg.endIdx; i++) tail.push(i);
+        var ds = diffStatsForSeg(f, seg);
+        var rangeLabel = ds.isFlight
+          ? "フライト区間（離陸〜着陸） " + fmtTimeUTC(f.points[ds.from].t) + " 〜 " + fmtTimeUTC(f.points[ds.to].t) + " UTC"
+          : "出力区間全体（飛行未検出のため）";
+        var summary;
+        if (ds.count > 0) {
+          summary = "GPS − 気圧の高度差 d(t) = GPS高度 − 気圧高度\n" +
+            "集計範囲: " + rangeLabel + " / " + fmtNum(ds.count) + " 点（GPS高度がないポイントは除外、地上・タクシー区間は除外）\n" +
+            "  RMS  sqrt(mean(d^2)) = " + fmtRmsDiffM(ds.rmsM) + "\n" +
+            "  平均 mean(d)        = " + fmtMeanDiffM(ds.meanM) + "\n\n";
+        } else {
+          summary = "GPS − 気圧の高度差 d(t): " + rangeLabel + " にGPS高度のあるポイントがないため集計できません。\n\n";
+        }
         var head = "時刻（UTC） / 気圧高度 / GPS高度 / CSVに出力される高度（選択中: " +
           (f.altSource === "baro" ? "気圧高度" : "GPS高度") + "）\n";
-        return head + idxs.map(row).join("\n") +
+        return summary + head + idxs.map(row).join("\n") +
           (tail.length ? "\n…\n" + tail.map(row).join("\n") : "");
       }
       function previewText(f, seg) {
@@ -1098,6 +1204,16 @@
             ' · 出力中（' + (f.altSource === "baro" ? "気圧" : "GPS") + '） ' + fmtNum(st.maxEleM) + ' m (' + fmtNum(st.maxEleM * 3.28084) + ' ft)</span>'
           : '<span class="num">最高高度 ' + fmtNum(st.maxEleM) + ' m (' + fmtNum(st.maxEleM * 3.28084) + ' ft)</span>';
 
+        var diffHtml = "";
+        if (f.isFit) {
+          var dsSeg = diffStatsForSeg(f, seg);
+          var diffSub = dsSeg.isFlight
+            ? 'd(t) = GPS高度 − 気圧高度 ／ 集計範囲: フライト区間（離陸〜着陸） ' +
+              fmtTimeUTC(pts[dsSeg.from].t) + ' 〜 ' + fmtTimeUTC(pts[dsSeg.to].t) + ' UTC ・ 地上・タクシー区間は除外 ・ GPS高度がないポイントは除外'
+            : 'd(t) = GPS高度 − 気圧高度 ／ 集計範囲: 出力区間全体（飛行が検出できなかったため） ・ GPS高度がないポイントは除外';
+          diffHtml = diffBoxHtml('GPS − 気圧の高度差（フライト ' + (si + 1) + '）', diffSub, dsSeg, false);
+        }
+
         return '<section class="flight' + (seg.included ? "" : " excluded") + '" data-seg="' + si + '">' +
           '<div class="flight-head"><span class="flight-title">フライト ' + (si + 1) + '</span>' +
           '<span class="badge ' + badgeCls + '">' + badge + '</span>' +
@@ -1112,6 +1228,8 @@
             '<span class="num">' + fmtNum(st.count) + ' 点 · 最高速度 ' + fmtNum(st.maxSpdKmh) + ' km/h (' + fmtNum(st.maxSpdKmh / 1.852) + ' kt)</span><br>' +
             altStatsHtml + '</div>' +
           '</div>' +
+
+          diffHtml +
 
           '<div class="range-row">' +
           '<div class="range-field"><label for="rs-' + f.id + '-' + si + '">開始（UTC）</label>' +
@@ -1172,6 +1290,15 @@
             '各フライトの「高度の比較プレビュー」で両方を確認できます。</p></div>';
         }
 
+        var overallDiffHtml = "";
+        if (f.isFit && f.flights.length > 1) {
+          var dsFile = diffStatsForFile(f);
+          overallDiffHtml = diffBoxHtml(
+            'GPS − 気圧の高度差（全フライト区間 合計）',
+            'd(t) = GPS高度 − 気圧高度 ／ 各フライトの離陸〜着陸の区間を合計して集計 ・ 地上・タクシー区間は除外 ・ GPS高度がないポイントは除外',
+            dsFile, true);
+        }
+
         return '<article class="card" data-id="' + f.id + '">' +
           '<div class="card-head"><span class="fname">' + esc(f.name) + '</span>' +
           flightBadge + '<span class="spacer"></span>' +
@@ -1185,6 +1312,8 @@
           (f.flights.length > 1 ? "このファイルのCSVをまとめてダウンロード（" + incCount + "件）" : "このファイルをCSVでダウンロード") + '</button></div>' +
 
           altRowHtml +
+
+          overallDiffHtml +
 
           '<div class="chart-wrap">' + sparklineSvg(f) +
           '<div class="chart-cap"><span class="num">' + fmtTimeUTC(pts[0].t) + '</span>' +
