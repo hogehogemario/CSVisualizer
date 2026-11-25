@@ -200,9 +200,27 @@
 
       .chart-wrap { margin-top: 14px; }
       .chart-wrap svg { display: block; width: 100%; height: 64px; }
-      .chart-wrap svg.alt { margin-top: 10px; }
+      .profile-row { display: flex; gap: 8px; align-items: stretch; margin-top: 10px; }
+      .profile-row:first-child { margin-top: 0; }
+      .y-axis {
+        flex: 0 0 64px; display: flex; flex-direction: column; justify-content: space-between;
+        text-align: right; color: var(--muted); font-size: 11px; line-height: 1.25;
+        padding: 0 0 2px; font-variant-numeric: tabular-nums;
+      }
+      .y-axis .ylab { font-size: 10.5px; }
+      .profile-chart { flex: 1; min-width: 0; }
+      .profile-chart svg { height: 64px; }
       .chart-cap { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+      .chart-cap.with-axis { margin-left: 72px; }
       .chart-cap .mid { text-align: center; }
+      .diff-line {
+        margin: 8px 0 0 72px; font-size: 12.5px; color: var(--muted); line-height: 1.6;
+      }
+      .diff-line .v { color: var(--ink); font-weight: 700; }
+      @media (max-width: 560px) {
+        .y-axis { flex-basis: 56px; }
+        .chart-cap.with-axis, .diff-line { margin-left: 64px; }
+      }
       .sw { display: inline-block; width: 14px; border-top: 3px solid var(--chart); vertical-align: middle; margin: 0 3px 0 8px; }
       .sw.gps { border-color: var(--accent); }
       .sw.baro { border-top-style: dashed; }
@@ -313,8 +331,8 @@
         日付はそのフライトの離陸日のUTC、<code>X</code> は同じコールサイン・同じ日付の中で時系列順に付けた連番です。<br />
         FITファイルでは、気圧高度（レコードの enhanced_altitude → altitude）とGPS高度（gps_metadata の enhanced_altitude、または developer field に記録されたGPS高度）を時刻で突き合わせて両方保持し、
         ファイルごとに選んだ方（デフォルトはGPS高度）をCSVの Altitude に出力します。選んだ高度が無い区間は、もう一方の高度を使います。<br />
-        高度差の評価: 各ポイントで d(t) = GPS高度 − 気圧高度 を取り、検出されたフライト区間（離陸〜着陸）全体で RMS = sqrt(mean(d²)) と符号付きの平均 mean(d) を集計します。
-        地上・タクシー部分は差がほぼ0で結果を薄めるため集計から除き、GPS高度がないポイントも除きます。複数フライトがある場合は区間ごとと全区間合計の両方を表示し、単位は m と ft の両方です。
+        高度差の評価: 各ポイントで d(t) = GPS高度 − 気圧高度 を取り、検出されたフライト区間（離陸〜着陸）をファイル全体で一括して RMS = sqrt(mean(d²)) と符号付きの平均 mean(d) を集計し、高度プロファイルの下に表示します。
+        地上・タクシー部分は差がほぼ0で結果を薄めるため集計から除き、GPS高度がないポイントも除きます。単位は m と ft の両方です。
         処理はこのページ内だけで完結し、ファイルが外部に送信されることはありません。
       </p>
     </main>
@@ -967,22 +985,20 @@
         if (!count) return { count: 0, meanM: null, rmsM: null };
         return { count: count, meanM: sum / count, rmsM: Math.sqrt(sumSq / count) };
       }
-      function diffBoxHtml(title, sub, ds, isOverall) {
-        var body;
-        if (!ds || ds.count === 0) {
-          body = '<p class="diff-note" style="margin-top:0">—</p>';
-        } else {
-          body =
-            '<p class="diff-sub">d(t) = GPS高度 − 気圧高度</p>' +
-            '<div class="diff-grid">' +
-            '<div><span class="k">RMS = sqrt(mean(d²))</span><span class="v num">' + fmtRmsDiffM(ds.rmsM) + '</span></div>' +
-            '<div><span class="k">平均 = mean(d)</span><span class="v num">' + fmtMeanDiffM(ds.meanM) + '</span></div>' +
-            '<div><span class="k">対象ポイント</span><span class="v num">' + fmtNum(ds.count) + ' 点</span></div>' +
-            '</div>';
-        }
-        return '<div class="diff-box' + (isOverall ? " overall" : "") + '">' +
-          '<p class="diff-title">' + title + '</p>' +
-          body + '</div>';
+      /* File-wide difference summary, shown as one quiet line directly
+         under the altitude profile (not per flight). The values pool
+         every detected flight interval in the file into a single
+         aggregate via diffStatsForFile; when no flight was detected the
+         output range stands in, so it is still one file-wide figure.
+         Returns "" when the file has no paired GPS/baro points. */
+      function diffLineHtml(f) {
+        if (!f.isFit) return "";
+        var ds = diffStatsForFile(f);
+        if (!ds || !ds.count) return "";
+        return '<p class="diff-line">GPS − 気圧の高度差（ファイル全体）: d(t) = GPS高度 − 気圧高度 ／ ' +
+          'RMS = sqrt(mean(d²)) <span class="v num">' + fmtRmsDiffM(ds.rmsM) + '</span> ・ ' +
+          '平均 = mean(d) <span class="v num">' + fmtMeanDiffM(ds.meanM) + '</span> ・ ' +
+          '<span class="num">' + fmtNum(ds.count) + ' 点</span></p>';
       }
       /* ================= sparkline ================= */
       function sparklineSvg(f) {
@@ -1009,10 +1025,20 @@
         }
         var lastX = W, lastY = H - 4 - (spd[n - 1] / maxV) * (H - 10);
         d += "L" + lastX.toFixed(1) + "," + lastY.toFixed(1);
-        return '<svg viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none" aria-hidden="true">' +
-          rects +
+        function ySpd(v) { return H - 4 - (v / maxV) * (H - 10); }
+        var grid =
+          '<line x1="0" y1="' + ySpd(maxV).toFixed(1) + '" x2="' + W + '" y2="' + ySpd(maxV).toFixed(1) + '" stroke="var(--line)" stroke-width="1" opacity="0.7"/>' +
+          '<line x1="0" y1="' + ySpd(maxV / 2).toFixed(1) + '" x2="' + W + '" y2="' + ySpd(maxV / 2).toFixed(1) + '" stroke="var(--line)" stroke-width="1" opacity="0.7"/>' +
+          '<line x1="0" y1="' + ySpd(0).toFixed(1) + '" x2="' + W + '" y2="' + ySpd(0).toFixed(1) + '" stroke="var(--line)" stroke-width="1"/>';
+        var yAxis = '<div class="y-axis" aria-hidden="true">' +
+          '<span class="num">' + fmtNum(maxV) + ' km/h</span>' +
+          '<span class="num">' + fmtNum(maxV / 2) + '</span>' +
+          '<span class="num">0</span></div>';
+        return '<div class="profile-row">' + yAxis +
+          '<div class="profile-chart"><svg viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none" aria-hidden="true">' +
+          rects + grid +
           (thrY > 0 && thrY < H ? '<line x1="0" y1="' + thrY.toFixed(1) + '" x2="' + W + '" y2="' + thrY.toFixed(1) + '" stroke="var(--warn)" stroke-width="1" stroke-dasharray="5 4" opacity="0.7"/>' : "") +
-          '<path d="' + d + '" fill="none" stroke="var(--chart)" stroke-width="1.6"/></svg>';
+          '<path d="' + d + '" fill="none" stroke="var(--chart)" stroke-width="1.6"/></svg></div></div>';
       }
 
       /* Altitude profile chart shown under the speed profile: GPS altitude
@@ -1073,11 +1099,21 @@
         var legend = "高度プロファイル" +
           (hasGps ? '<span class="sw gps"></span>GPS高度' : "") +
           (hasBaro ? '<span class="sw baro"></span>気圧高度' : "");
-        return '<svg class="alt" viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none" aria-hidden="true">' +
-          rects + paths + "</svg>" +
-          '<div class="chart-cap"><span class="num">最低 ' + fmtNum(rawMin) + ' m</span>' +
+        var midScale = (minV + maxV) / 2;
+        var grid =
+          '<line x1="0" y1="' + yOf(maxV).toFixed(1) + '" x2="' + W + '" y2="' + yOf(maxV).toFixed(1) + '" stroke="var(--line)" stroke-width="1" opacity="0.7"/>' +
+          '<line x1="0" y1="' + yOf(midScale).toFixed(1) + '" x2="' + W + '" y2="' + yOf(midScale).toFixed(1) + '" stroke="var(--line)" stroke-width="1" opacity="0.7"/>' +
+          '<line x1="0" y1="' + yOf(minV).toFixed(1) + '" x2="' + W + '" y2="' + yOf(minV).toFixed(1) + '" stroke="var(--line)" stroke-width="1"/>';
+        var yAxis = '<div class="y-axis" aria-hidden="true">' +
+          '<span class="num">' + fmtNum(maxV) + ' m</span>' +
+          '<span class="num">' + fmtNum(midScale) + '</span>' +
+          '<span class="num">' + fmtNum(minV) + '</span></div>';
+        return '<div class="profile-row">' + yAxis +
+          '<div class="profile-chart"><svg class="alt" viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none" aria-hidden="true">' +
+          rects + grid + paths + "</svg></div></div>" +
+          '<div class="chart-cap with-axis"><span></span>' +
           '<span class="mid">' + legend + '</span>' +
-          '<span class="num">最高 ' + fmtNum(rawMax) + " m</span></div>";
+          '<span></span></div>';
       }
 
       /* ================= ZIP (STORE, no compression) ================= */
@@ -1198,12 +1234,6 @@
         var outStart = pts[seg.startIdx], outEnd = pts[seg.endIdx];
         var fname = names[f.id + ":" + si] || "";
 
-        var diffHtml = "";
-        if (f.isFit) {
-          var dsSeg = diffStatsForSeg(f, seg);
-          diffHtml = diffBoxHtml('GPS − 気圧の高度差（フライト ' + (si + 1) + '）', '', dsSeg, false);
-        }
-
         return '<section class="flight' + (seg.included ? "" : " excluded") + '" data-seg="' + si + '">' +
           '<div class="flight-head"><span class="flight-title">フライト ' + (si + 1) + '</span>' +
           '<span class="badge ' + badgeCls + '">' + badge + '</span>' +
@@ -1216,8 +1246,6 @@
           '<div><span class="k">出力区間（UTC）</span><span class="v num">' +
             fmtDateTimeUTC(outStart.t) + " 〜 " + fmtTimeUTC(outEnd.t) + '</span></div>' +
           '</div>' +
-
-          diffHtml +
 
           '<div class="range-row">' +
           '<div class="range-field"><label for="rs-' + f.id + '-' + si + '">開始（UTC）</label>' +
@@ -1269,15 +1297,6 @@
             '<p class="alt-note">気圧高度 <span class="v num">' + fmtNum(baroN) + ' 点</span> / GPS高度 <span class="v num">' + fmtNum(gpsN) + ' 点</span>が記録されています。</p></div>';
         }
 
-        var overallDiffHtml = "";
-        if (f.isFit && f.flights.length > 1) {
-          var dsFile = diffStatsForFile(f);
-          overallDiffHtml = diffBoxHtml(
-            'GPS − 気圧の高度差（全フライト区間 合計）',
-            '',
-            dsFile, true);
-        }
-
         return '<article class="card" data-id="' + f.id + '">' +
           '<div class="card-head"><span class="fname">' + esc(f.name) + '</span>' +
           flightBadge + '<span class="spacer"></span>' +
@@ -1292,17 +1311,11 @@
 
           altRowHtml +
 
-          overallDiffHtml +
-
           '<div class="chart-wrap">' + sparklineSvg(f) +
-          '<div class="chart-cap"><span class="num">' + fmtTimeUTC(pts[0].t) + '</span>' +
+          '<div class="chart-cap with-axis"><span class="num">' + fmtTimeUTC(pts[0].t) + '</span>' +
           '<span class="mid">速度プロファイル（帯 = フライトごとの出力区間 / 破線 = 離陸判定速度）</span>' +
           '<span class="num">' + fmtTimeUTC(pts[n - 1].t) + "</span></div>" +
-          altitudeChartHtml(f) + "</div>" +
-
-          '<p class="record-line">元の記録（UTC）: <span class="v num">' +
-            fmtDateTimeUTC(pts[0].t) + " 〜 " + fmtTimeUTC(pts[n - 1].t) + '</span> · <span class="num">' +
-            fmtNum(n) + " 点 · " + fmtDuration(pts[n - 1].t - pts[0].t) + "</span></p>" +
+          altitudeChartHtml(f) + diffLineHtml(f) + "</div>" +
 
           segsHtml +
           "</article>";
