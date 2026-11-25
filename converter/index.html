@@ -200,8 +200,12 @@
 
       .chart-wrap { margin-top: 14px; }
       .chart-wrap svg { display: block; width: 100%; height: 64px; }
+      .chart-wrap svg.alt { margin-top: 10px; }
       .chart-cap { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
       .chart-cap .mid { text-align: center; }
+      .sw { display: inline-block; width: 14px; border-top: 3px solid var(--chart); vertical-align: middle; margin: 0 3px 0 8px; }
+      .sw.gps { border-color: var(--accent); }
+      .sw.baro { border-top-style: dashed; }
 
       .record-line { color: var(--muted); font-size: 12.5px; margin-top: 10px; }
       .record-line .v { color: var(--ink); font-weight: 600; }
@@ -268,6 +272,7 @@
         変換に使う高度をファイルごとに選べます（<strong>デフォルトはGPS高度</strong>）。気圧高度は与圧機では機内の与圧高度になってしまうため、通常はGPS高度がおすすめです。
         選んだ高度が無い区間は、もう一方の高度にフォールバックします。
         あわせて、各フライトの離陸〜着陸の区間だけを対象に、<strong>GPS高度と気圧高度の差 d(t) = GPS高度 − 気圧高度の RMS と符号付き平均</strong>を表示します（m / ft 両方、複数フライトがある場合は区間ごと＋全区間合計）。
+        ファイルごとのプレビューには、速度プロファイルに加えて<strong>GPS高度と気圧高度の高度プロファイル</strong>も表示します（GPS高度が無いファイルでは気圧高度のみ）。
       </p>
 
       <div class="drop" id="drop" role="button" tabindex="0" aria-label="GPX / FITファイルを追加">
@@ -1081,6 +1086,71 @@
           '<path d="' + d + '" fill="none" stroke="var(--chart)" stroke-width="1.6"/></svg>';
       }
 
+      /* Altitude profile chart shown under the speed profile: GPS altitude
+         (solid, accent) and barometric altitude (dashed, chart colour) on a
+         shared scale, with the same flight-range bands as the speed chart.
+         Series with no data in the file are omitted (GPX files have no GPS
+         altitude, so only the barometric line appears). Returns the SVG
+         plus its caption, or "" when the file has no altitude at all. */
+      function altitudeChartHtml(f) {
+        var W = 600, H = 64, pts = f.points, n = pts.length;
+        var t0 = pts[0].t, t1 = pts[n - 1].t, span = Math.max(1, t1 - t0);
+        var minV = Infinity, maxV = -Infinity, hasBaro = false, hasGps = false, i, p;
+        for (i = 0; i < n; i++) {
+          p = pts[i];
+          if (typeof p.eleBaro === "number" && isFinite(p.eleBaro)) {
+            hasBaro = true;
+            if (p.eleBaro < minV) minV = p.eleBaro;
+            if (p.eleBaro > maxV) maxV = p.eleBaro;
+          }
+          if (typeof p.eleGps === "number" && isFinite(p.eleGps)) {
+            hasGps = true;
+            if (p.eleGps < minV) minV = p.eleGps;
+            if (p.eleGps > maxV) maxV = p.eleGps;
+          }
+        }
+        if (!hasBaro && !hasGps) return "";
+        var rawMin = minV, rawMax = maxV;
+        if (maxV - minV < 10) { var midV = (maxV + minV) / 2; minV = midV - 5; maxV = midV + 5; }
+        var padV = (maxV - minV) * 0.08; minV -= padV; maxV += padV;
+        function yOf(v) { return H - 4 - ((v - minV) / (maxV - minV)) * (H - 10); }
+        var rects = "";
+        f.flights.forEach(function (seg) {
+          var sx = pts[seg.startIdx].t, ex = pts[seg.endIdx].t;
+          var rx = ((sx - t0) / span) * W, rw = Math.max(2, ((ex - sx) / span) * W);
+          rects += '<rect x="' + rx.toFixed(1) + '" y="0" width="' + rw.toFixed(1) + '" height="' + H +
+            '" fill="' + (seg.included ? "var(--accent-soft)" : "var(--chart-soft)") + '" opacity="' + (seg.included ? "1" : "0.45") + '"/>';
+        });
+        function linePath(key) {
+          var step = Math.max(1, Math.floor(n / 300));
+          var idxs = [], j;
+          for (j = 0; j < n; j += step) idxs.push(j);
+          for (j = n - 1; j >= 0; j--) { // always end on the last valid point
+            if (typeof pts[j][key] === "number" && isFinite(pts[j][key])) { idxs.push(j); break; }
+          }
+          var d = "", pen = false;
+          idxs.forEach(function (ix) {
+            var v = pts[ix][key];
+            if (typeof v !== "number" || !isFinite(v)) { pen = false; return; }
+            var x = ((pts[ix].t - t0) / span) * W;
+            d += (pen ? "L" : "M") + x.toFixed(1) + "," + yOf(v).toFixed(1);
+            pen = true;
+          });
+          return d;
+        }
+        var paths = "";
+        if (hasBaro) paths += '<path d="' + linePath("eleBaro") + '" fill="none" stroke="var(--chart)" stroke-width="1.6" stroke-dasharray="5 3"/>';
+        if (hasGps) paths += '<path d="' + linePath("eleGps") + '" fill="none" stroke="var(--accent)" stroke-width="1.6"/>';
+        var legend = "高度プロファイル" +
+          (hasGps ? '<span class="sw gps"></span>GPS高度' : "") +
+          (hasBaro ? '<span class="sw baro"></span>気圧高度' : "");
+        return '<svg class="alt" viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none" aria-hidden="true">' +
+          rects + paths + "</svg>" +
+          '<div class="chart-cap"><span class="num">最低 ' + fmtNum(rawMin) + ' m</span>' +
+          '<span class="mid">' + legend + '</span>' +
+          '<span class="num">最高 ' + fmtNum(rawMax) + " m</span></div>";
+      }
+
       /* ================= ZIP (STORE, no compression) ================= */
       var crcTable = null;
       function crc32(bytes) {
@@ -1318,7 +1388,8 @@
           '<div class="chart-wrap">' + sparklineSvg(f) +
           '<div class="chart-cap"><span class="num">' + fmtTimeUTC(pts[0].t) + '</span>' +
           '<span class="mid">速度プロファイル（帯 = フライトごとの出力区間 / 破線 = 離陸判定速度）</span>' +
-          '<span class="num">' + fmtTimeUTC(pts[n - 1].t) + "</span></div></div>" +
+          '<span class="num">' + fmtTimeUTC(pts[n - 1].t) + "</span></div>" +
+          altitudeChartHtml(f) + "</div>" +
 
           '<p class="record-line">元の記録（UTC）: <span class="v num">' +
             fmtDateTimeUTC(pts[0].t) + " 〜 " + fmtTimeUTC(pts[n - 1].t) + '</span> · <span class="num">' +
