@@ -56,8 +56,12 @@
       .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
       .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 
-      .lead { margin: 4px 0 18px; font-size: 15.5px; }
+      .lead { margin: 4px 0 6px; font-size: 15.5px; }
       .lead strong { font-weight: 700; }
+      .rms-def {
+        margin: 0 0 18px; font-size: 13px; color: var(--muted); line-height: 1.65;
+      }
+      .rms-def .v { color: var(--ink); font-weight: 600; }
 
       /* ---------- drop zone ---------- */
       .drop {
@@ -182,6 +186,8 @@
       .alt-field label { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 3px; font-weight: 600; }
       .alt-note { font-size: 12.5px; color: var(--muted); flex: 1 1 240px; margin: 0; }
       .alt-note .v { color: var(--ink); font-weight: 600; }
+      .alt-diff { font-size: 13px; color: var(--muted); flex: 1 1 100%; margin: 2px 0 0; }
+      .alt-diff .v { color: var(--ink); font-weight: 700; }
 
       .diff-box {
         margin-top: 12px; padding: 12px 14px;
@@ -213,13 +219,9 @@
       .chart-cap { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
       .chart-cap.with-axis { margin-left: 72px; }
       .chart-cap .mid { text-align: center; }
-      .diff-line {
-        margin: 8px 0 0 72px; font-size: 12.5px; color: var(--muted); line-height: 1.6;
-      }
-      .diff-line .v { color: var(--ink); font-weight: 700; }
       @media (max-width: 560px) {
         .y-axis { flex-basis: 56px; }
-        .chart-cap.with-axis, .diff-line { margin-left: 64px; }
+        .chart-cap.with-axis { margin-left: 64px; }
       }
       .sw { display: inline-block; width: 14px; border-top: 3px solid var(--chart); vertical-align: middle; margin: 0 3px 0 8px; }
       .sw.gps { border-color: var(--accent); }
@@ -275,6 +277,7 @@
   <body>
     <main>
       <p class="lead">GPS高度を使いたい場合は、Garminの Connect IQ データフィールド「Position Info」を使って記録してください。</p>
+      <p class="rms-def">GPS高度と気圧高度の差 <span class="v">d(t) = GPS高度 − 気圧高度</span> ／ <span class="v">RMS = sqrt(mean(d²))</span> はズレの大きさ全体（与圧の系統的なズレ＋GPSのノイズ）を表し、<span class="v">平均誤差 = mean(d)</span>（符号付き）は系統的なズレの向きと大きさを表します。集計は離陸〜着陸の区間だけを対象にファイル全体で一括して行い、地上・タクシー部分とGPS高度がないポイントは除きます。単位は m / ft です。</p>
       <div class="drop" id="drop" role="button" tabindex="0" aria-label="GPX / FITファイルを追加">
         <p class="big">GPX / FITファイルをドロップ、またはタップして選択</p>
         <p class="small">複数ファイルをまとめて追加できます（.gpx / .fit）</p>
@@ -331,8 +334,6 @@
         日付はそのフライトの離陸日のUTC、<code>X</code> は同じコールサイン・同じ日付の中で時系列順に付けた連番です。<br />
         FITファイルでは、気圧高度（レコードの enhanced_altitude → altitude）とGPS高度（gps_metadata の enhanced_altitude、または developer field に記録されたGPS高度）を時刻で突き合わせて両方保持し、
         ファイルごとに選んだ方（デフォルトはGPS高度）をCSVの Altitude に出力します。選んだ高度が無い区間は、もう一方の高度を使います。<br />
-        高度差の評価: 各ポイントで d(t) = GPS高度 − 気圧高度 を取り、検出されたフライト区間（離陸〜着陸）をファイル全体で一括して RMS = sqrt(mean(d²)) と符号付きの平均 mean(d) を集計し、高度プロファイルの下に表示します。
-        地上・タクシー部分は差がほぼ0で結果を薄めるため集計から除き、GPS高度がないポイントも除きます。単位は m と ft の両方です。
         処理はこのページ内だけで完結し、ファイルが外部に送信されることはありません。
       </p>
     </main>
@@ -985,20 +986,16 @@
         if (!count) return { count: 0, meanM: null, rmsM: null };
         return { count: count, meanM: sum / count, rmsM: Math.sqrt(sumSq / count) };
       }
-      /* File-wide difference summary, shown as one quiet line directly
-         under the altitude profile (not per flight). The values pool
-         every detected flight interval in the file into a single
-         aggregate via diffStatsForFile; when no flight was detected the
-         output range stands in, so it is still one file-wide figure.
-         Returns "" when the file has no paired GPS/baro points. */
-      function diffLineHtml(f) {
+      /* File-wide difference values for the altitude-source box:
+         numbers only (RMS / mean), no definition text — the definitions
+         live once at the top of the page. The values pool every detected
+         flight interval in the file via diffStatsForFile. Returns ""
+         when the file has no paired GPS/baro points. */
+      function altDiffHtml(f) {
         if (!f.isFit) return "";
         var ds = diffStatsForFile(f);
         if (!ds || !ds.count) return "";
-        return '<p class="diff-line">GPS − 気圧の高度差（ファイル全体）: d(t) = GPS高度 − 気圧高度 ／ ' +
-          'RMS = sqrt(mean(d²)) <span class="v num">' + fmtRmsDiffM(ds.rmsM) + '</span> ・ ' +
-          '平均 = mean(d) <span class="v num">' + fmtMeanDiffM(ds.meanM) + '</span> ・ ' +
-          '<span class="num">' + fmtNum(ds.count) + ' 点</span></p>';
+        return '<p class="alt-diff">RMS: <span class="v num">' + fmtRmsDiffM(ds.rmsM) + '</span> ／ 平均誤差: <span class="v num">' + fmtMeanDiffM(ds.meanM) + '</span></p>';
       }
       /* ================= sparkline ================= */
       function sparklineSvg(f) {
@@ -1294,7 +1291,8 @@
             '<option value="gps"' + (src === "gps" ? " selected" : "") + '>GPS高度（デフォルト）</option>' +
             '<option value="baro"' + (src === "baro" ? " selected" : "") + '>気圧高度</option>' +
             '</select></div>' +
-            '<p class="alt-note">気圧高度 <span class="v num">' + fmtNum(baroN) + ' 点</span> / GPS高度 <span class="v num">' + fmtNum(gpsN) + ' 点</span>が記録されています。</p></div>';
+            '<p class="alt-note">気圧高度 <span class="v num">' + fmtNum(baroN) + ' 点</span> / GPS高度 <span class="v num">' + fmtNum(gpsN) + ' 点</span>が記録されています。</p>' +
+            altDiffHtml(f) + '</div>';
         }
 
         return '<article class="card" data-id="' + f.id + '">' +
@@ -1315,7 +1313,7 @@
           '<div class="chart-cap with-axis"><span class="num">' + fmtTimeUTC(pts[0].t) + '</span>' +
           '<span class="mid">速度プロファイル（帯 = フライトごとの出力区間 / 破線 = 離陸判定速度）</span>' +
           '<span class="num">' + fmtTimeUTC(pts[n - 1].t) + "</span></div>" +
-          altitudeChartHtml(f) + diffLineHtml(f) + "</div>" +
+          altitudeChartHtml(f) + "</div>" +
 
           segsHtml +
           "</article>";
