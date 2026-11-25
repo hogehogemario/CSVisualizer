@@ -236,21 +236,22 @@
   <body>
     <main>
       <p class="lead">
-        GarminのGPXを読み込むと、<strong>速度で離陸〜着陸の区間を自動検出</strong>して歩行・タキシング部分を取り除き、
-        フライトCSV形式（Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction）のCSVに変換します。<strong>1つのGPXに複数回の飛行が含まれている場合は、フライトごとに複数のCSVに分割</strong>して出力します。
+        GarminのGPX / FITファイルを読み込むと、<strong>速度で離陸〜着陸の区間を自動検出</strong>して歩行・タキシング部分を取り除き、
+        フライトCSV形式（Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction）のCSVに変換します。<strong>1つのファイルに複数回の飛行が含まれている場合は、フライトごとに複数のCSVに分割</strong>して出力します。
         コールサインはファイルごとに付け替えられます。
+        FITの高度には<strong>GPS高度（gps_metadataの enhanced_altitude）</strong>を使います。気圧高度計の高度は与圧機では機内の与圧高度になってしまうためで、GPS高度が無い区間はレコードの高度にフォールバックします。
       </p>
 
-      <div class="drop" id="drop" role="button" tabindex="0" aria-label="GPXファイルを追加">
-        <p class="big">GPXファイルをドロップ、またはタップして選択</p>
-        <p class="small">複数ファイルをまとめて追加できます（.gpx）</p>
-        <input type="file" id="fileInput" accept=".gpx,application/gpx+xml,text/xml" multiple />
+      <div class="drop" id="drop" role="button" tabindex="0" aria-label="GPX / FITファイルを追加">
+        <p class="big">GPX / FITファイルをドロップ、またはタップして選択</p>
+        <p class="small">複数ファイルをまとめて追加できます（.gpx / .fit）</p>
+        <input type="file" id="fileInput" accept=".gpx,.fit,application/gpx+xml,text/xml" multiple />
       </div>
 
       <section class="panel" aria-label="自動判定の設定">
         <h2>速度による自動判定</h2>
         <p class="note">
-          速度はGPXの緯度経度と時刻から計算します（平滑化あり）。離陸は「判定速度以上が維持時間つづいた時点」、
+          速度は緯度経度と時刻から計算します（平滑化あり）。離陸は「判定速度以上が維持時間つづいた時点」、
           着陸は「離陸後に判定速度未満が維持時間つづいた時点」として検出し、前後のマージンを付けて切り取ります。
           着陸を検出したあとは記録の続きから次の離陸を探すので、1ファイルに複数回の飛行がある場合はフライトごとに分割されます。
           設定を変えると、手動調整していないファイルは再検出されます。
@@ -289,14 +290,15 @@
       </div>
 
       <div id="fileList"></div>
-      <div class="empty" id="emptyState">GPXファイルを追加すると、ファイルごとに検出したフライト（離陸・着陸時刻）と変換プレビューがここに表示されます。</div>
+      <div class="empty" id="emptyState">GPX / FITファイルを追加すると、ファイルごとに検出したフライト（離陸・着陸時刻）と変換プレビューがここに表示されます。</div>
 
       <p class="spec">
         出力形式: <code>Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction</code> ／
         Altitude はメートル→フィート、Speed は km/h→ノット、Direction は連続点から計算した方位角（0–359°）。
         時刻はすべてUTCです。<br />
         ファイル名は <code>Callsign_YYYYMMDD_X.csv</code>（例: <code>ANA123_20261117_1.csv</code>）で、
-        日付はそのフライトの離陸日のUTC、<code>X</code> は同じコールサイン・同じ日付の中で時系列順に付けた連番です。
+        日付はそのフライトの離陸日のUTC、<code>X</code> は同じコールサイン・同じ日付の中で時系列順に付けた連番です。<br />
+        FITファイルでは、高度にGPS高度（gps_metadata の enhanced_altitude）を時刻で突き合わせて使い、GPS高度が無い区間はレコードの高度（enhanced_altitude → altitude の順）を使います。
         処理はこのページ内だけで完結し、ファイルが外部に送信されることはありません。
       </p>
     </main>
@@ -386,6 +388,166 @@
           dedup.push(points[j]);
         }
         if (dedup.length < 2) throw new Error("時刻付きのトラックポイントが見つかりませんでした");
+        return dedup;
+      }
+
+      /* ================= FIT parsing ================= */
+      /* Minimal FIT (Flexible and Interoperable Data Transfer) reader.
+         Walks the definition/data message stream and extracts:
+           - record messages (global 20): timestamp, position, altitude
+           - gps_metadata messages (global 160): enhanced_altitude (GPS altitude)
+         Altitude prefers the gps_metadata GPS altitude matched by time,
+         because the record altitude comes from the barometric altimeter and
+         only reflects cabin pressurisation altitude in a pressurised aircraft.
+         When no GPS altitude is available, it falls back to the record's
+         enhanced_altitude, then its plain altitude. */
+      var FIT_EPOCH_MS = 631065600000; // 1989-12-31T00:00:00Z in Unix ms
+      var FIT_TYPE_SIZE = { 0: 1, 1: 1, 2: 1, 3: 2, 4: 2, 5: 4, 6: 4, 7: 1, 8: 4, 9: 8, 10: 1, 11: 2, 12: 4, 13: 1, 14: 8, 15: 8, 16: 8 };
+      function parseFit(buffer) {
+        var bytes = new Uint8Array(buffer);
+        var dv = new DataView(buffer);
+        if (bytes.length < 12) throw new Error("ファイルが小さすぎます");
+        var headerSize = bytes[0];
+        if (headerSize !== 12 && headerSize !== 14) throw new Error("FITヘッダーを読み取れませんでした");
+        var sig = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]);
+        if (sig !== ".FIT") throw new Error("FITファイルではありません（署名が違います）");
+        var dataSize = dv.getUint32(4, true);
+        var pos = headerSize;
+        var end = Math.min(bytes.length, headerSize + dataSize);
+        var defs = {};      // local message type -> definition
+        var lastTs = null;  // last timestamp seen, seconds since FIT epoch
+        var records = [];   // {t, lat, lon, eleRec}
+        var gpsAlts = [];   // {t, ele}
+
+        function readVal(off, type, little) {
+          switch (type) {
+            case 0: case 2: case 10: case 13: return dv.getUint8(off);
+            case 1: return dv.getInt8(off);
+            case 3: return dv.getInt16(off, little);
+            case 4: case 11: return dv.getUint16(off, little);
+            case 5: return dv.getInt32(off, little);
+            case 6: case 12: return dv.getUint32(off, little);
+            case 8: return dv.getFloat32(off, little);
+            case 9: return dv.getFloat64(off, little);
+            default: return null; // strings and 64-bit ints: not needed here
+          }
+        }
+
+        while (pos < end) {
+          var header = bytes[pos++];
+          var compressed = (header & 0x80) !== 0;
+          var isDef = !compressed && (header & 0x40) !== 0;
+          var local = compressed ? ((header >> 5) & 0x03) : (header & 0x0F);
+          if (isDef) {
+            var hasDev = (header & 0x10) !== 0;
+            pos += 1; // reserved byte
+            var arch = bytes[pos++]; // 0 = little endian, 1 = big endian
+            var little = arch !== 1;
+            var globalNum = dv.getUint16(pos, little); pos += 2;
+            var nf = bytes[pos++];
+            var fields = [];
+            for (var i = 0; i < nf; i++) {
+              fields.push({ num: bytes[pos], size: bytes[pos + 1], type: bytes[pos + 2] & 0x1F });
+              pos += 3;
+            }
+            var devTotal = 0;
+            if (hasDev) {
+              var nd = bytes[pos++];
+              for (var j = 0; j < nd; j++) { devTotal += bytes[pos + 1]; pos += 3; }
+            }
+            defs[local] = { globalNum: globalNum, little: little, fields: fields, devTotal: devTotal };
+            continue;
+          }
+          var def = defs[local];
+          if (!def) break; // stream state unknown; stop instead of misparsing
+          var vals = {};
+          for (var k = 0; k < def.fields.length; k++) {
+            var fd = def.fields[k];
+            var base = FIT_TYPE_SIZE[fd.type];
+            if (base && fd.size >= base) vals[fd.num] = readVal(pos, fd.type, def.little);
+            pos += fd.size;
+          }
+          pos += def.devTotal;
+
+          // Resolve the message timestamp: its own field 253 wins, then the
+          // compressed-header time offset, then the last timestamp seen.
+          var ts = null;
+          if (typeof vals[253] === "number" && vals[253] !== 4294967295) {
+            ts = vals[253];
+            lastTs = ts;
+          } else if (compressed && lastTs !== null) {
+            var off5 = header & 0x1F;
+            ts = (lastTs & ~31) + off5;
+            if (off5 < (lastTs & 31)) ts += 32;
+            lastTs = ts;
+          } else if (lastTs !== null) {
+            ts = lastTs;
+          }
+          if (ts === null) continue;
+          var tMs = ts * 1000 + FIT_EPOCH_MS;
+
+          if (def.globalNum === 20) { // record
+            var lat = vals[0], lon = vals[1];
+            if (typeof lat !== "number" || typeof lon !== "number") continue;
+            if (lat === 2147483647 || lon === 2147483647) continue; // invalid sentinel
+            var eleRec = null;
+            if (typeof vals[78] === "number" && vals[78] !== 4294967295) eleRec = vals[78] / 5 - 500; // enhanced_altitude
+            else if (typeof vals[2] === "number" && vals[2] !== 65535) eleRec = vals[2] / 5 - 500;      // altitude
+            records.push({
+              t: tMs,
+              lat: lat * (180 / 2147483648),
+              lon: lon * (180 / 2147483648),
+              eleRec: eleRec
+            });
+          } else if (def.globalNum === 160) { // gps_metadata
+            // Fields are identified by their FIT profile field numbers, not
+            // by their order in the definition message: field 4 is
+            // enhanced_altitude (scale 5, offset 500) and field 3 is the
+            // separate enhanced_speed (scale 1000). Reading field 3 as
+            // altitude would decode a 70 m/s speed (raw 70000) as 13,500 m
+            // and a 0 m/s speed as -500 m.
+            var gAlt = vals[4]; // enhanced_altitude (GPS altitude)
+            if (typeof gAlt === "number" && gAlt !== 4294967295) {
+              var ms = (typeof vals[0] === "number" && vals[0] !== 65535) ? vals[0] : 0; // timestamp_ms (field 0)
+              gpsAlts.push({ t: tMs + ms, ele: gAlt / 5 - 500 });
+            }
+          }
+        }
+
+        records.sort(function (a, b) { return a.t - b.t; });
+        gpsAlts.sort(function (a, b) { return a.t - b.t; });
+
+        // GPS altitude at time t: linear interpolation between the bracketing
+        // gps_metadata samples (gap up to 10 s), or the nearest endpoint when
+        // within 2 s outside the sampled range. Null when unavailable.
+        function gpsAltAt(t) {
+          if (!gpsAlts.length) return null;
+          var first = gpsAlts[0], last = gpsAlts[gpsAlts.length - 1];
+          if (t <= first.t) return (first.t - t <= 2000) ? first.ele : null;
+          if (t >= last.t) return (t - last.t <= 2000) ? last.ele : null;
+          var lo = 0, hi = gpsAlts.length - 1;
+          while (hi - lo > 1) {
+            var mid = (lo + hi) >> 1;
+            if (gpsAlts[mid].t <= t) lo = mid; else hi = mid;
+          }
+          var a = gpsAlts[lo], b = gpsAlts[hi];
+          if (b.t - a.t > 10000) return null;
+          return a.ele + (b.ele - a.ele) * ((t - a.t) / (b.t - a.t));
+        }
+
+        var points = [], lastEle = 0;
+        records.forEach(function (r) {
+          var ele = gpsAltAt(r.t);
+          if (ele === null || !isFinite(ele)) ele = (r.eleRec !== null && isFinite(r.eleRec)) ? r.eleRec : null;
+          if (ele === null) ele = lastEle; else lastEle = ele;
+          points.push({ t: r.t, lat: r.lat, lon: r.lon, ele: ele });
+        });
+        var dedup = [];
+        for (var m = 0; m < points.length; m++) {
+          if (dedup.length && dedup[dedup.length - 1].t === points[m].t) continue;
+          dedup.push(points[m]);
+        }
+        if (dedup.length < 2) throw new Error("位置情報つきのレコードが見つかりませんでした");
         return dedup;
       }
 
@@ -910,21 +1072,23 @@
       var fileInput = document.getElementById("fileInput");
 
       function defaultCallsign(name) {
-        var s = name.replace(/\.gpx$/i, "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+        var s = name.replace(/\.(gpx|fit)$/i, "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
         return s.slice(0, 12);
       }
       function addFiles(fileList) {
         var cfg = getCfg();
         var jobs = Array.prototype.slice.call(fileList)
-          .filter(function (f) { return /\.gpx$/i.test(f.name) || /xml|gpx/.test(f.type); })
+          .filter(function (f) { return /\.(gpx|fit)$/i.test(f.name) || /xml|gpx/.test(f.type); })
           .map(function (file) {
-            return file.text().then(function (text) {
+            var isFit = /\.fit$/i.test(file.name);
+            var reading = isFit ? file.arrayBuffer() : file.text();
+            return reading.then(function (data) {
               var entry = {
                 id: nextId++, name: file.name, callsign: defaultCallsign(file.name),
                 error: null, flights: []
               };
               try {
-                entry.points = parseGpx(text);
+                entry.points = isFit ? parseFit(data) : parseGpx(data);
                 var d = computeDerived(entry.points);
                 entry.speeds = d.speeds; entry.bearings = d.bearings;
                 entry.flights = detectAll(entry, cfg);
