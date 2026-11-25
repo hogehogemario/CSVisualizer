@@ -568,8 +568,12 @@
         <input type="range" id="altScale" min="0" max="3" step="0.1" value="0.5" />
       </div>
       <div class="ctl">
-        <label for="trailLen">Trail Length <span class="val" id="trailLenVal">30%</span></label>
-        <input type="range" id="trailLen" min="5" max="100" step="1" value="30" />
+        <label for="trailLen">Trail Length (Hours Back) <span class="val" id="trailLenVal">1 h</span></label>
+        <div style="display:flex;gap:7px;align-items:center">
+          <input type="range" id="trailLen" min="0" max="12" step="0.25" value="1" style="flex:1;min-width:0" aria-label="Trail length in hours (slider)" />
+          <input type="number" id="trailLenNum" class="numin" min="0" step="0.25" value="1" aria-label="Trail length in hours" />
+          <span style="font-size:12px;color:var(--muted);font-weight:600">h</span>
+        </div>
       </div>
       <div class="ctl">
         <label for="trailWidth">Trail Thickness <span class="val" id="trailWidthVal">1.5</span></label>
@@ -7619,7 +7623,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       speed: 60,
       globalColor: '#ff0000',
       altScale: 0.5,
-      trailFrac: 0.30,
+      trailHours: 1,
       trailWidth: 1.5,
       fullRouteWidth: 2,
       fullRouteOpacity: 0.5,
@@ -8835,10 +8839,11 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
         return Math.max(20, fl.rawCount * 3);
       });
       var total = weights.reduce(function(a,b){ return a+b; }, 0) || 1;
-      var acc = 0;
+      var acc = 0, accSec = 0;
       segments = vis.map(function(fl, i){
-        var seg = { fl: fl, w: weights[i], start: acc/total, end: (acc+weights[i])/total };
-        acc += weights[i];
+        var seg = { fl: fl, w: weights[i], start: acc/total, end: (acc+weights[i])/total,
+                    startSec: accSec, endSec: accSec + weights[i] };
+        acc += weights[i]; accSec += weights[i];
         return seg;
       });
       renderSegBar();
@@ -9512,9 +9517,23 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       refreshGeometries();
     });
     var trailEl = document.getElementById('trailLen');
-    trailEl.addEventListener('input', function(){
-      state.trailFrac = parseInt(trailEl.value, 10) / 100;
-      document.getElementById('trailLenVal').textContent = trailEl.value + '%';
+    var trailNumEl = document.getElementById('trailLenNum');
+    function fmtTrailHours(h){ return (Math.round(h * 100) / 100) + ' h'; }
+    function setTrailHours(h){
+      if (!isFinite(h)) h = 0;
+      state.trailHours = Math.max(0, h);
+      document.getElementById('trailLenVal').textContent = fmtTrailHours(state.trailHours);
+      if (trailEl) trailEl.value = String(Math.min(12, state.trailHours));
+      if (trailNumEl && document.activeElement !== trailNumEl)
+        trailNumEl.value = String(Math.round(state.trailHours * 100) / 100);
+    }
+    if (trailEl) trailEl.addEventListener('input', function(){
+      setTrailHours(parseFloat(trailEl.value));
+      if (trailNumEl) trailNumEl.value = trailEl.value;
+    });
+    if (trailNumEl) trailNumEl.addEventListener('change', function(){
+      setTrailHours(parseFloat(trailNumEl.value));
+      trailNumEl.value = String(Math.round(state.trailHours * 100) / 100);
     });
     var trailWidthEl = document.getElementById('trailWidth');
     if (trailWidthEl) trailWidthEl.addEventListener('input', function(){
@@ -10714,6 +10733,38 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       };
     }
 
+    /* Trail window: the trail shows the last state.trailHours hours
+       of flight time, measured along the compressed timeline — the
+       gaps between flights are skipped, exactly as playback skips
+       them — so the trail runs continuously ACROSS CSV boundaries:
+       when a new flight starts, the tail of the previous flight(s)
+       stays visible until it is more than trailHours old, and a
+       finished flight keeps its in-window tail instead of vanishing
+       the moment the next CSV begins. Inside one flight, sample
+       index maps linearly onto recorded time (time-based
+       resampling), so converting the window edges to sample indices
+       per flight is exact. Returns {start, head} sample indices for
+       this flight's trail tube, or null when no part of the flight
+       falls inside the window. */
+    function trailIndexRange(fl){
+      if (!segments.length || !(state.trailHours > 0)) return null;
+      var cur = currentSegment();
+      if (!cur || cur.seg.startSec == null) return null;
+      var nowSec = cur.seg.startSec + cur.frac * cur.seg.w;
+      var fromSec = nowSec - state.trailHours * 3600;
+      for (var i = 0; i < segments.length; i++){
+        var seg = segments[i];
+        if (seg.fl !== fl) continue;
+        if (!(seg.w > 0)) return null;
+        var a = Math.max(seg.startSec, fromSec), b = Math.min(seg.endSec, nowSec);
+        if (b - a <= 0.001) return null;
+        var i0 = Math.round((a - seg.startSec) / seg.w * (SAMPLES - 1));
+        var i1 = Math.round((b - seg.startSec) / seg.w * (SAMPLES - 1));
+        return (i1 - i0 >= 1) ? { start: i0, head: i1 } : null;
+      }
+      return null;
+    }
+
     function applyPhase(vis, fl, phaseInfo, projectFn, labelLift){
       if (!vis) return null;
       var frac = phaseInfo.frac;
@@ -10746,12 +10797,9 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
         vis.fullLine.material.opacity = state.showRoute ? state.fullRouteOpacity : 0;
         vis.fullLine.material.color.set(state.fullRouteColor);
       }
-      var head = Math.max(0, Math.round(cur.idx));
-      var len = Math.max(1, Math.round(SAMPLES * state.trailFrac));
-      var start = Math.max(0, head - len);
-      if (phaseInfo.phase === 'done'){ vis.trailLine.geometry.setDrawRange(0, 0); }
-      else if (phaseInfo.phase === 'next'){ vis.trailLine.geometry.setDrawRange(0, 0); }
-      else { vis.trailLine.geometry.setDrawRange(tubeRangeStart(start), tubeRangeCount(start, head)); vis.trailLine.material.opacity = 1; }
+      var tr = trailIndexRange(fl);
+      if (!tr){ vis.trailLine.geometry.setDrawRange(0, 0); }
+      else { vis.trailLine.geometry.setDrawRange(tubeRangeStart(tr.start), tubeRangeCount(tr.start, tr.head)); vis.trailLine.material.opacity = 1; }
       return cur;
     }
 
