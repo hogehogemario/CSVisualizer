@@ -100,10 +100,17 @@
          publishes the frame's on-screen top edge and width as the
          --frame-top / --frame-w custom properties, and the HUD sits
          just inside that top edge, centred on the frame. The
-         fallbacks cover the first paint before the script runs. */
+         fallbacks cover the first paint before the script runs.
+         The top is ALSO floored at the device safe area: the page
+         runs full-bleed (viewport-fit=cover, translucent status
+         bar), so on notched phones in portrait the frame's top
+         edge can sit up inside the status-bar / notch zone and
+         the HUD's top rows were clipped behind it. max() keeps
+         the HUD below whichever is lower — the frame edge or the
+         safe area — so it is never cut off at the top. */
       #bigClock{
         left:50%; transform:translateX(-50%);
-        top:calc(var(--frame-top, 0px) + 10px);
+        top:max(calc(var(--frame-top, 0px) + 10px), calc(env(safe-area-inset-top, 0px) + 10px));
         z-index:40;
         padding:10px 22px 12px; text-align:center; pointer-events:none;
         min-width:min(430px, 92vw, calc(var(--frame-w, 100vw) - 12px));
@@ -405,11 +412,11 @@
            gear at the top-right); the panel itself only appears
            below that button while it is open. On wide screens the
            toggle stays hidden and the panel is always shown. */
-        #flightsPanel{ display:none; left:10px; top:62px; width:min(300px, calc(100vw - 108px)); padding:11px; max-height:36dvh; }
+        #flightsPanel{ display:none; left:10px; top:calc(62px + env(safe-area-inset-top, 0px)); width:min(300px, calc(100vw - 108px)); padding:11px; max-height:36dvh; }
         #flightsPanel.open{ display:block; }
         #flightsPanel .hint{ display:none; }
         #flightsToggle{
-          display:flex; position:fixed; left:10px; top:10px; z-index:56;
+          display:flex; position:fixed; left:10px; top:calc(10px + env(safe-area-inset-top, 0px)); z-index:56;
           width:44px; height:44px; min-height:44px; border-radius:12px;
           background:var(--panel); border:1px solid var(--line-strong); color:var(--text);
           align-items:center; justify-content:center; cursor:pointer;
@@ -417,13 +424,13 @@
         }
         #dropzone{ padding:10px; }
         #dropzone svg{ width:22px; height:22px; margin-bottom:4px; }
-        #settingsPanel{ display:none; right:10px; top:10px; width:min(264px, calc(100vw - 20px)); max-height:60dvh; overflow-y:auto; z-index:50; }
+        #settingsPanel{ display:none; right:10px; top:calc(10px + env(safe-area-inset-top, 0px)); width:min(264px, calc(100vw - 20px)); max-height:60dvh; overflow-y:auto; z-index:50; }
         #settingsPanel.open{ display:block; }
         #settingsToggle{
           /* z-index above the Clock HUD (40), same as the Flight
              Lists toggle, so the gear stays visible and tappable
              on phones instead of sliding behind the HUD. */
-          display:flex; position:fixed; right:10px; top:10px; z-index:56;
+          display:flex; position:fixed; right:10px; top:calc(10px + env(safe-area-inset-top, 0px)); z-index:56;
           width:44px; height:44px; min-height:44px; border-radius:12px;
           background:var(--panel); border:1px solid var(--line-strong); color:var(--text);
           align-items:center; justify-content:center; cursor:pointer;
@@ -7739,8 +7746,20 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
     function layoutStage(){
       if (!renderer || !renderer.domElement) return;
       var pr = Math.min(window.devicePixelRatio || 1, 2);
-      var maxBw = Math.floor(window.innerWidth * pr);
-      var maxBh = Math.floor(window.innerHeight * pr);
+      /* Fit the frame to the area that is ACTUALLY visible: on
+         mobile browsers window.innerHeight can include space the
+         browser chrome (URL / tool bars) is currently covering,
+         which let the portrait frame — and the Clock HUD pinned
+         to its top edge — start partly off-screen and look cut
+         off at the top. The visual viewport reports the visible
+         size, so prefer it whenever it exists. */
+      var vw = window.innerWidth, vh = window.innerHeight;
+      if (window.visualViewport){
+        if (window.visualViewport.width > 0) vw = window.visualViewport.width;
+        if (window.visualViewport.height > 0) vh = window.visualViewport.height;
+      }
+      var maxBw = Math.floor(vw * pr);
+      var maxBh = Math.floor(vh * pr);
       var portrait = VIEW_ASPECT < 1;
       var blockW = portrait ? 18 : 32, blockH = portrait ? 32 : 18;
       var k = Math.max(1, Math.min(Math.floor(maxBw / blockW), Math.floor(maxBh / blockH)));
@@ -7855,6 +7874,17 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
 
       window.addEventListener('resize', function(){
         layoutStage();
+      });
+      /* Mobile browser chrome showing / hiding (and rotation)
+         does not always fire a window resize, but it changes the
+         visible height — re-fit the frame then, so --frame-top
+         (and the HUD pinned to it) tracks what is really on
+         screen instead of a stale, partly-covered position. */
+      if (window.visualViewport)
+        window.visualViewport.addEventListener('resize', function(){ layoutStage(); });
+      window.addEventListener('orientationchange', function(){
+        setTimeout(layoutStage, 60);
+        setTimeout(layoutStage, 350);
       });
 
       /* Keep the --th / --hh CSS custom properties equal to the
@@ -8329,7 +8359,18 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
          sharpens the texture again on the GPU (see makeChartMaterial),
          so airspace rings and place names stay legible when zoomed in.
          The pixel budget keeps very large mosaics near native size. */
-      var scale = Math.min(1.75, 8192 / Math.max(W, H), Math.sqrt(30000000 / (W * H)));
+      /* Pixel budget: on small (phone-class) screens the budget
+         is cut to 12M px. A 30M px canvas is a ~120 MB bitmap;
+         building several of those at once (one per layer, plus
+         the previous area's still cached) can exceed a phone
+         browser's per-tab memory right after a file is added,
+         and the browser then reloads the tab by itself — which
+         is exactly what uploading a KML (a flight in a new area,
+         so all-new mosaics) looked like. 12M px is still ~3.5k
+         px on a side, far beyond a phone's 1080x1920 recording
+         frame, so chart text stays legible there. */
+      var pxBudget = (Math.min(window.innerWidth || 9999, window.innerHeight || 9999) <= 720) ? 12000000 : 30000000;
+      var scale = Math.min(1.75, 8192 / Math.max(W, H), Math.sqrt(pxBudget / (W * H)));
       if (!(scale > 0) || !isFinite(scale)) scale = 1;
       canvas.width = Math.round(W * scale); canvas.height = Math.round(H * scale);
       var ctx = canvas.getContext('2d');
@@ -8444,8 +8485,20 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       if (mosaicCache[key]) return Promise.resolve(mosaicCache[key]);
       if (mosaicPending[key]) return mosaicPending[key];
       var p = buildMosaic(localFrame.bounds, layer).then(function(res){
-        mosaicCache[key] = res;
         delete mosaicPending[key];
+        /* If the flight area changed while this mosaic was being
+           built, its bounds are already stale: do not cache it
+           (the sweep in rebuildLocalWorld would only have to free
+           it again) — release the texture now and let the caller
+           ignore the result via its mesh / layer guards. A
+           disposed CanvasTexture can still be re-uploaded from
+           its canvas if a guard race ever places it, so this is
+           safe. */
+        if (localFrame && mosaicKeyFor(layer) !== key){
+          if (res && res.texture) res.texture.dispose();
+          return res;
+        }
+        mosaicCache[key] = res;
         return res;
       }).catch(function(err){
         delete mosaicPending[key];
@@ -8458,11 +8511,43 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
        background. Whichever layer is not on screen is fetched while
        the user watches the other one, so switching layers later
        never has to wait for tiles — and never flashes the bare blue
-       ground that used to show while the new chart loaded. */
+       ground that used to show while the new chart loaded.
+       The builds run ONE AT A TIME (active layer first): each
+       mosaic is a multi-megapixel canvas plus a mipmapped GPU
+       texture, and building all three concurrently tripled the
+       peak memory right after a file load — enough to make
+       phone browsers kill and reload the tab. Sequential builds
+       keep the same instant-switch behaviour (the preload still
+       finishes in the background) at a third of the peak. */
     function preloadChartLayers(){
       if (!localFrame) return;
+      var order = [state.mapLayer];
       ['vfr', 'ifr', 'map'].forEach(function(layer){
-        ensureMosaic(layer).catch(function(){ /* background preload: failures surface on switch */ });
+        if (order.indexOf(layer) < 0) order.push(layer);
+      });
+      var chain = Promise.resolve();
+      order.forEach(function(layer){
+        chain = chain.then(function(){
+          return ensureMosaic(layer).catch(function(){ /* background preload: failures surface on switch */ });
+        });
+      });
+    }
+    /* Free the cached mosaics of every OTHER flight area. Cache
+       keys embed the bounds, so an area's mosaics can only ever
+       be reused while those exact bounds are current; once the
+       flights change the area, the old multi-megapixel textures
+       are dead weight that just pushes the tab toward the
+       browser's memory limit. Called from rebuildLocalWorld()
+       right after the new frame is computed. */
+    function disposeStaleMosaics(){
+      if (!localFrame) return;
+      var suffix = mosaicKeyFor(state.mapLayer).slice(state.mapLayer.length);
+      Object.keys(mosaicCache).forEach(function(key){
+        if (key.slice(key.indexOf('|')) !== suffix){
+          var res = mosaicCache[key];
+          if (res && res.texture) res.texture.dispose();
+          delete mosaicCache[key];
+        }
       });
     }
     function chartStatusFor(res, layer){
@@ -8611,6 +8696,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       while (localGroup.children.length) localGroup.remove(localGroup.children[0]);
       computeLocalFrame();
       if (!localFrame) return;
+      disposeStaleMosaics();
       var size = localFrame.size * 1.35;
       var ground = new THREE.Mesh(
         new THREE.PlaneGeometry(1, 1),
