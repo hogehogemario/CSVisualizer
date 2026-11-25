@@ -532,7 +532,11 @@
         <div class="big">Drop CSV / KML Files / Click to Select</div>
         <div class="sub">Supports flight-track CSV and KML files.<br />Load multiple files at once (1 file = 1 flight).</div>
       </div>
-      <input type="file" id="fileInput" accept=".csv,.kml,text/csv,text/plain,application/vnd.google-earth.kml+xml" multiple hidden />
+      <!-- No accept filter: iPadOS greys out files whose UTI does not map
+           to the listed MIME types (KML from FlightAware etc.), making them
+           unselectable. Files are detected by extension / content in
+           handleFiles instead, and unparseable files show an error toast. -->
+      <input type="file" id="fileInput" multiple hidden />
       <div class="row-btns">
         <button class="btn primary small" id="demoBtn" type="button">Try Sample</button>
         <button class="btn ghost small" id="clearBtn" type="button">Clear All</button>
