@@ -138,7 +138,7 @@
          on phones the panel's top-left corner overlaps the
          frame-top HUD, and the panel must stay visible and
          tappable there instead of sliding underneath it. */
-      #flightsPanel{ left:14px; top:14px; width:316px; padding:14px; max-height:calc(100dvh - 208px); overflow-y:auto; z-index:50; }
+      #flightsPanel{ left:14px; top:14px; width:316px; padding:14px; max-height:calc(100dvh - 208px); overflow:hidden; display:flex; flex-direction:column; z-index:50; }
       #dropzone{
         border:1.5px dashed var(--line-strong); border-radius:12px;
         padding:16px 12px; text-align:center; cursor:pointer;
@@ -197,7 +197,7 @@
          same as the Flight Lists panel: on phones the opened panel
          overlaps the frame-top HUD, and it must stay visible and
          operable there instead of sliding underneath it. */
-      #settingsPanel{ right:14px; top:14px; width:256px; padding:14px; max-height:calc(100dvh - 208px); overflow-y:auto; z-index:50; }
+      #settingsPanel{ right:14px; top:14px; width:256px; padding:14px; max-height:calc(100dvh - 208px); overflow:hidden; display:flex; flex-direction:column; z-index:50; }
       .seg{ display:flex; background:#0b1727; border:1px solid var(--line); border-radius:10px; padding:3px; gap:3px; }
       .seg button{
         flex:1; border:0; background:transparent; color:var(--muted); border-radius:7px;
@@ -242,7 +242,8 @@
       #transport{
         left:50%; transform:translateX(-50%); bottom:14px;
         width:min(1060px, calc(100vw - 28px));
-        padding:12px 16px 13px;
+        padding:12px 16px 13px; z-index:50;
+        overflow:hidden; display:flex; flex-direction:column;
       }
       #transport .top{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
       #playBtn{
@@ -361,6 +362,15 @@
       .kf-item .del{ flex:none; width:26px; height:26px; min-height:26px; border-radius:7px; border:1px solid transparent; background:transparent; color:var(--muted); cursor:pointer; line-height:1; }
       .kf-item .del:hover{ color:#fca5a5; border-color:#7f1d1d; }
       .panel-off{ display:none !important; }
+      /* Scrollable window content lives in .panel-scroll, INSIDE
+         the panel but OUTSIDE of which the x close button sits.
+         The panel itself no longer scrolls (overflow:hidden +
+         flex column), so the absolutely-positioned close button
+         is anchored to the panel's top-right corner and never
+         scrolls away with the content — for Flights and Settings
+         (which scroll) and for the Playback bar alike. */
+      .panel-scroll{ overflow-y:auto; flex:1 1 auto; min-height:0; }
+      #transport .panel-scroll{ overflow-y:visible; flex:none; }
       .panel-close{
         position:absolute; top:8px; right:8px; z-index:6;
         width:26px; height:26px; min-height:26px; padding:0; border-radius:8px;
@@ -377,7 +387,7 @@
          tab brings the panel back. Tabs sit above the Clock HUD
          (40) so they are never hidden behind it. */
       .pull-tab{
-        position:fixed; z-index:52; display:none;
+        position:fixed; z-index:53; display:none;
         align-items:center; justify-content:center; gap:6px;
         background:var(--panel); border:1px solid var(--line-strong); color:var(--text);
         font-size:11px; font-weight:700; letter-spacing:.08em; cursor:pointer;
@@ -413,7 +423,7 @@
            below that button while it is open. On wide screens the
            toggle stays hidden and the panel is always shown. */
         #flightsPanel{ display:none; left:10px; top:calc(62px + env(safe-area-inset-top, 0px)); width:min(300px, calc(100vw - 108px)); padding:11px; max-height:36dvh; }
-        #flightsPanel.open{ display:block; }
+        #flightsPanel.open{ display:flex; }
         #flightsPanel .hint{ display:none; }
         #flightsToggle{
           display:flex; position:fixed; left:10px; top:calc(10px + env(safe-area-inset-top, 0px)); z-index:56;
@@ -424,8 +434,8 @@
         }
         #dropzone{ padding:10px; }
         #dropzone svg{ width:22px; height:22px; margin-bottom:4px; }
-        #settingsPanel{ display:none; right:10px; top:calc(10px + env(safe-area-inset-top, 0px)); width:min(264px, calc(100vw - 20px)); max-height:60dvh; overflow-y:auto; z-index:50; }
-        #settingsPanel.open{ display:block; }
+        #settingsPanel{ display:none; right:10px; top:calc(10px + env(safe-area-inset-top, 0px)); width:min(264px, calc(100vw - 20px)); max-height:60dvh; overflow:hidden; z-index:50; }
+        #settingsPanel.open{ display:flex; }
         #settingsToggle{
           /* z-index above the Clock HUD (40), same as the Flight
              Lists toggle, so the gear stays visible and tappable
@@ -526,6 +536,7 @@
     <!-- Flights / upload -->
     <section class="panel" id="flightsPanel" aria-label="Flight data">
       <button class="panel-close" data-close="flights" type="button" aria-label="Hide flight list" title="Hide flight list">×</button>
+      <div class="panel-scroll">
       <h2>Flight Data</h2>
       <div id="dropzone" role="button" tabindex="0" aria-label="Select CSV or KML files">
         <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0 4 4m-4-4L8 8"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
@@ -543,6 +554,7 @@
       </div>
       <div id="flightList"></div>
       <p class="hint">CSV format: <code>Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction</code> (Position is "latitude,longitude"). KML files (gx:Track) are also supported: the Callsign is read from the track name inside the file, altitude is converted from metres to feet, and speed / direction are derived from the positions and timestamps. When multiple files are loaded, they are automatically sorted by each file's first timestamp, in both the list and playback order (re-sorted when files are added later). Playback uses a compressed timeline that plays flights back-to-back and skips the gaps between them. Use the eye icon to show/hide a flight; click a flight to move the playhead to it (this only moves — it does not start playback). All flights share one trail / aircraft color, changed in bulk from Settings &gt; Trail &amp; Aircraft Color. The 3D label above the aircraft shows the Callsign from the file at that moment.</p>
+      </div>
     </section>
 
     <button id="settingsToggle" type="button" aria-label="Open display settings">
@@ -552,6 +564,7 @@
     <!-- Settings -->
     <section class="panel" id="settingsPanel" aria-label="Display settings">
       <button class="panel-close" data-close="settings" type="button" aria-label="Hide settings" title="Hide settings">×</button>
+      <div class="panel-scroll">
       <h2>Map Layer (Area Map)</h2>
       <div class="seg" id="layerSeg" role="group" aria-label="Map layer">
         <button type="button" data-layer="vfr" class="on">VFR Sectional</button>
@@ -714,12 +727,14 @@
           <option value="max">Maximum (12–80 Mbps by Size)</option>
         </select>
       </div>
+      </div>
     </section>
 
 
     <!-- Transport -->
     <section class="panel" id="transport" aria-label="Playback controls">
       <button class="panel-close" data-close="transport" type="button" aria-label="Hide playback bar" title="Hide playback bar">×</button>
+      <div class="panel-scroll">
       <div class="top">
         <button id="playBtn" type="button" aria-label="Play / Pause">
           <svg id="playIcon" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M7 4.5v15l13-7.5-13-7.5Z"/></svg>
@@ -776,6 +791,7 @@
       <div id="kfTrack" aria-label="Keyframe markers"></div>
       <div id="segBar" aria-label="Timeline by flight"></div>
       <div id="mapCredit"><span id="layerStatus">Map: —</span><span id="creditText"></span></div>
+      </div>
     </section>
 
     <!-- Pull tabs: shown on the screen edge while the matching
@@ -9932,10 +9948,51 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
     ];
     var PANEL_EL = { clock:'bigClock', flights:'flightsPanel', settings:'settingsPanel', transport:'transport' };
     var panelState = { clock:true, flights:true, settings:true, transport:true };
+    /* Bring-to-front: the three windows (Flights / Settings /
+       Playback) share a stacking order. Clicking (or tapping, or
+       focusing into) a window moves it to the top of that order,
+       so the window the user is interacting with is never hidden
+       behind another one where they overlap — most visibly on
+       phones, where Flights and Settings overlap each other and
+       the transport bar. Z-indexes are reassigned from a fixed
+       base (50, 51, 52) instead of growing without bound, so the
+       windows always stay above the Clock HUD (40) and below the
+       pull tabs / toggles / toast / modal that must stay on top. */
+    var panelStack = ['flights', 'settings', 'transport'];
+    function applyPanelStack(){
+      panelStack.forEach(function(key, i){
+        var el = document.getElementById(PANEL_EL[key]);
+        if (el) el.style.zIndex = String(50 + i);
+      });
+    }
+    function bringPanelToFront(key){
+      var idx = panelStack.indexOf(key);
+      if (idx === -1) return;
+      if (idx !== panelStack.length - 1){
+        panelStack.splice(idx, 1);
+        panelStack.push(key);
+      }
+      applyPanelStack();
+    }
+    PANEL_DEFS.forEach(function(d){
+      var el = document.getElementById(PANEL_EL[d.key]);
+      if (!el) return;
+      el.addEventListener('pointerdown', function(){ bringPanelToFront(d.key); });
+      el.addEventListener('focusin', function(){ bringPanelToFront(d.key); });
+    });
+    applyPanelStack();
+    /* Opening a window from its corner icon toggle (small
+       screens) also brings it to the front, even when it was not
+       hidden via its x button and setPanelVisible is not called. */
+    var settingsToggleEl = document.getElementById('settingsToggle');
+    if (settingsToggleEl) settingsToggleEl.addEventListener('click', function(){ bringPanelToFront('settings'); });
+    var flightsToggleEl = document.getElementById('flightsToggle');
+    if (flightsToggleEl) flightsToggleEl.addEventListener('click', function(){ bringPanelToFront('flights'); });
     function setPanelVisible(key, on){
       panelState[key] = !!on;
       var el = document.getElementById(PANEL_EL[key]);
       if (el) el.classList.toggle('panel-off', !on);
+      if (on && PANEL_EL[key]) bringPanelToFront(key);
       document.body.classList.toggle('has-hidden-panels', Object.keys(panelState).some(function(k){ return !panelState[k]; }));
       renderPullTabs();
     }
