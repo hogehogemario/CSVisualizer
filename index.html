@@ -9298,6 +9298,17 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       return fl;
     }
 
+    /* Remove the built-in SAMPLE flight, if present. Called when the
+       user successfully loads one of their own CSV/KML files: the
+       sample is only a starter, so once real data arrives it goes
+       away on its own. (It can still be brought back any time with
+       the Try Sample button via loadSampleLFA.) */
+    function removeBuiltInSample(){
+      flights.slice().forEach(function(f){
+        if (f.source === 'sample-lfa531') removeFlight(f.id);
+      });
+    }
+
     /* ---------------- Flight list UI ---------------- */
     var listEl = document.getElementById('flightList');
     var EYE_ON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
@@ -9528,8 +9539,9 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
        context — the search judges exactly what would ship):
          0. HARD CONSTRAINTS (the prerequisites): the aircraft
             is in frame at every sample of the built trajectory,
-            judged by Overview's fit margins (sides / bottom to
-            the frame edge, top at NDC +0.6 under the HUD); and
+            judged by Overview's fit margins (sides 5% in from
+            each edge at NDC ±0.9, bottom to the frame edge,
+            top at NDC +0.6 under the HUD); and
             the camera PITCH — the view's depression angle, 0°
             looking level to 40° looking down — sits within
             0–40°. A home breaking either is rejected.
@@ -9612,7 +9624,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       var total = totalDurationSec();
       var tr = null, P = null, n = 0;
       var cx = 0, cy = 0, cz = 0;
-      var SAFE_X = 1.0, SAFE_TOP = 0.6, SAFE_BOT = 1.0; /* Overview's fit margins (see makeOverviewCtx) */
+      var SAFE_X = 0.9, SAFE_TOP = 0.6, SAFE_BOT = 1.0; /* Overview's fit margins (see makeOverviewCtx): the sides sit 5% of the frame width in from each edge (NDC ±0.9), the bottom at the edge, the top guarded under the HUD */
       var CTR_Y = (SAFE_TOP - SAFE_BOT) / 2; /* the centre of the usable frame (−0.2): the middle of the range the aircraft may occupy, bottom edge to HUD-guarded top — the point the centering tier measures against */
       var tanV = 0, tanH = 0;
       var centers = null, elevs = [20, 27.5, 35, 42.5, 50, 57.5, 65, 72.5], closer = [1, 0.85, 0.7, 0.55];
@@ -10913,15 +10925,28 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
               ? parseFlightKML(text, file.name)
               : parseFlightCSV(text, file.name);
             /* One file = one flight, identified by its file name.
-               Same-named files get a numeric suffix to stay distinct. */
+               Same-named files get a numeric suffix to stay distinct.
+               The built-in SAMPLE does not count as a name clash: it
+               is about to be removed (below), so a user's own
+               SAMPLE.csv keeps its real name. */
             var label = parsed.name, dup = 2;
-            while (flights.some(function(f){ return f.name === label; })){
+            while (flights.some(function(f){ return f.source !== 'sample-lfa531' && f.name === label; })){
               var dot = parsed.name.lastIndexOf('.');
               var base = dot > 0 ? parsed.name.slice(0, dot) : parsed.name;
               var ext = dot > 0 ? parsed.name.slice(dot) : '.csv';
               label = base + ' (' + (dup++) + ')' + ext;
             }
-            if (addFlight(label, parsed.points, file.name)) added++;
+            if (addFlight(label, parsed.points, file.name)){
+              added++;
+              /* The user loaded their own file: the built-in SAMPLE
+                 is no longer needed, so remove it automatically.
+                 Done per successful add (not at batch end) so it
+                 happens even when another file in the same batch
+                 fails to load. A batch where every file fails keeps
+                 the sample, so the app is never left empty by a
+                 bad upload. */
+              removeBuiltInSample();
+            }
           } catch (err){ errors.push(file.name + ': ' + err.message); }
           if (++done === files.length){
             if (added){ state.progress = 0; toast(added + ' flight(s) loaded'); } /* playback stays stopped (see handleFiles) */
@@ -12263,6 +12288,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
           if (i <= 0) return;
           var dtW = CAM_PATH_DT / Math.max(0.25, state.speed);
           var cap = ctx.panRateDegPerSec * Math.PI / 180 * dtW * ctx.dist * 0.5774;
+          if (ctx.panRateScale) cap *= ctx.panRateScale[i]; /* this sample's position-graded standard (see overviewRateScale) */
           var p3 = (i - 1) * 3;
           if (sx < shift[p3] - cap) sx = shift[p3] - cap; else if (sx > shift[p3] + cap) sx = shift[p3] + cap;
           if (sy < shift[p3 + 1] - cap) sy = shift[p3 + 1] - cap; else if (sy > shift[p3 + 1] + cap) sy = shift[p3 + 1] + cap;
@@ -12502,6 +12528,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
           if (i <= 0) return;
           var dtW = CAM_PATH_DT / Math.max(0.25, state.speed);
           var cap = ctx.panRateDegPerSec * Math.PI / 180 * dtW * ctx.dist * 0.5774;
+          if (ctx.panRateScale) cap *= Math.max(ctx.panRateScale[i], ctx.panRateScale[i + 1]); /* graded, at the pair's faster end (see overviewRateScale) */
           var G = [gx, gy, gz], l3 = (i - 1) * 3;
           for (var c = 0; c < 3; c++){
             var lo = shift[l3 + c] - cap - shift[i3 + c], hi = shift[l3 + c] + cap - shift[i3 + c];
@@ -12578,20 +12605,37 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
        rules — the 0.3 / 0.55 / 0.8 / 1.0 steps toward
        centring, clamped to the ±90° ANGLE CAP (the same
        formula as correctCamSamplesValve, at the candidate
-       dolly) and to the pan SPEED CAP against BOTH
-       neighbours' current shifts (the same per-component
-       formula capCorrectionSteps enforces), so a pulled-in
-       sample's pan is inside Overview's smoothness standards
-       by construction and the pan never jumps to earn the
-       tighter framing. The first (tightest) candidate the
-       re-fitted pan can hold is committed — the smaller
-       pull-out AND the larger pan together; where no
-       candidate fits, the sample keeps its fitted channels
-       untouched, so the pull stays out exactly where the pan
-       genuinely cannot take over within its caps. The caller
-       settles the result with the usual cap → valve re-verify
-       rounds, whose correction passes keep the last word on
-       the in-frame guarantee. Returns true when any sample
+       dolly) and to the pan SPEED CAP against the PREVIOUS
+       sample's current shift — causal, exactly as the valve
+       pass clamps its own candidates (the same per-component
+       formula capCorrectionSteps enforces). The clamp must
+       NOT also bind against the next sample: this pass works
+       in time order, so the previous shift is already this
+       pass's own value while the next sample's is not yet
+       computed — clamping against it mistakes an uncomputed
+       neighbour for a zero demand and strangles a uniform
+       pan the whole path legitimately needs. That was a
+       real failure: a far, stationary aircraft needs the
+       SAME large pan at every sample, and a both-neighbours
+       clamp capped every candidate at one capped step from
+       the OLD pan, so no tighter candidate could ever fit
+       and the lens sat pulled out for the whole stop. The
+       next-sample side of the rate is capCorrectionSteps'
+       job in the caller's settle rounds, as it is for the
+       valve pass, so a pulled-in sample's pan is still
+       inside Overview's smoothness standards and the pan
+       never jumps to earn the tighter framing. The first
+       (tightest) candidate the re-fitted pan can hold is
+       committed — the smaller pull-out AND the larger pan
+       together; where no candidate fits, the sample's
+       channels stay untouched, but its pan still walks one
+       capped, fit-tested step toward the aircraft when that
+       step advances it (Phase C below), so a uniform pan
+       demand ramps up sample by sample instead of stalling
+       at the stretch's first sample. The caller settles the
+       result with the usual cap → valve re-verify rounds,
+       whose correction passes keep the last word on the
+       in-frame guarantee. Returns true when any sample
        pulled in. */
     function tightenOverviewPull(basePos, baseLook, dolly, zoom, shift, pos, look, P, n, ctx){
       if (!ctx.panRateDegPerSec) return false;
@@ -12609,27 +12653,21 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
         var hh = hx * hx + hy * hy + hz * hz;
         var fx = px - baseLook[i3], fy = py - baseLook[i3 + 1], fz = pz - baseLook[i3 + 2];
         var fh = fx * hx + fy * hy + fz * hz;
-        /* The SPEED cap against both neighbours' current
-           shifts, per component — the valve pass's causal
-           clamp, applied to each side with that side's pair
-           cap, so the committed pan sits within the capped
-           rate of the path around it on both sides. */
-        var capAbs = ctx.panRateDegPerSec * Math.PI / 180 * dtW * ctx.dist * 0.5774; /* the absolute angular rate as a look-point step (see capCorrectionSteps) */
-        var capPrev = i > 0 ? capAbs : Infinity;
-        var capNext = i < n - 1 ? capAbs : Infinity;
+        /* The SPEED cap against the PREVIOUS sample's current
+           shift only, per component — the valve pass's causal
+           clamp (see the header): the previous shift is
+           already this pass's own committed value, so a
+           sustained pan demand ramps up at the capped rate
+           from sample to sample; the next sample's side of
+           the rate belongs to capCorrectionSteps in the
+           caller's settle rounds. */
+        var capAbs = ctx.panRateDegPerSec * Math.PI / 180 * dtW * ctx.dist * 0.5774 * (ctx.panRateScale ? ctx.panRateScale[i] : 1); /* the absolute angular rate as a look-point step (see capCorrectionSteps), at this sample's position-graded standard (see overviewRateScale) */
         var clampRate = function(sx, sy, sz){
-          var p3, cap, v;
           if (i > 0){
-            p3 = (i - 1) * 3; cap = capPrev;
-            v = shift[p3] - cap; if (sx < v) sx = v; v = shift[p3] + cap; if (sx > v) sx = v;
-            v = shift[p3 + 1] - cap; if (sy < v) sy = v; v = shift[p3 + 1] + cap; if (sy > v) sy = v;
-            v = shift[p3 + 2] - cap; if (sz < v) sz = v; v = shift[p3 + 2] + cap; if (sz > v) sz = v;
-          }
-          if (i < n - 1){
-            p3 = (i + 1) * 3; cap = capNext;
-            v = shift[p3] - cap; if (sx < v) sx = v; v = shift[p3] + cap; if (sx > v) sx = v;
-            v = shift[p3 + 1] - cap; if (sy < v) sy = v; v = shift[p3 + 1] + cap; if (sy > v) sy = v;
-            v = shift[p3 + 2] - cap; if (sz < v) sz = v; v = shift[p3 + 2] + cap; if (sz > v) sz = v;
+            var p3 = (i - 1) * 3, v;
+            v = shift[p3] - capAbs; if (sx < v) sx = v; v = shift[p3] + capAbs; if (sx > v) sx = v;
+            v = shift[p3 + 1] - capAbs; if (sy < v) sy = v; v = shift[p3 + 1] + capAbs; if (sy > v) sy = v;
+            v = shift[p3 + 2] - capAbs; if (sz < v) sz = v; v = shift[p3 + 2] + capAbs; if (sz > v) sz = v;
           }
           return [sx, sy, sz];
         };
@@ -12663,7 +12701,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
           while (lad[lad.length - 1] * 1.12 < cur) lad.push(lad[lad.length - 1] * 1.12);
           return lad;
         };
-        var fit = null, cc;
+        var fit = null, cc, moved = false;
         /* Phase A — DOLLY: pull in at the current lens. */
         if (dolly[i] > 1.0001){
           var ladD = ladderOf(dolly[i], 1);
@@ -12672,7 +12710,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
             if (fit){
               dolly[i] = ladD[cc];
               shift[i3] = fit[0]; shift[i3 + 1] = fit[1]; shift[i3 + 2] = fit[2];
-              changed = true;
+              changed = true; moved = true;
               break;
             }
           }
@@ -12689,8 +12727,44 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
             if (fit){
               zoom[i] = ladZ[cc];
               shift[i3] = fit[0]; shift[i3 + 1] = fit[1]; shift[i3 + 2] = fit[2];
-              changed = true;
+              changed = true; moved = true;
               break;
+            }
+          }
+        }
+        /* Phase C — PAN PROGRESS: no tighter channel fit at
+           this sample, but walk the pan one capped step
+           toward the aircraft anyway when the step itself
+           fits at the shipped channels and actually advances
+           the pan along f (largest step first). The ladder
+           can only engage where the pan has already ramped
+           most of the way to centring, so without this a
+           stretch whose pan starts far from centring stalls
+           at its first sample — every sample identical, none
+           able to tighten, the lens held out for the whole
+           stop. Committing the advance lets the ramp build
+           sample by sample at the capped rate and the ladder
+           engages behind it; the caller's settle rounds
+           verify the moved pan like any other. */
+        if (!moved){
+          var ff = fx * fx + fy * fy + fz * fz;
+          if (ff > 1e-9){
+            var tCur = (shift[i3] * fx + shift[i3 + 1] * fy + shift[i3 + 2] * fz) / ff;
+            var kmC = fh >= 0 ? Infinity : (dolly[i] * hh) / (-fh);
+            var stepsC = [1.0, 0.8, 0.55, 0.3];
+            for (var s4 = 0; s4 < stepsC.length; s4++){
+              var kkC = Math.min(stepsC[s4], kmC);
+              var clC = clampRate(fx * kkC, fy * kkC, fz * kkC);
+              var tNew = (clC[0] * fx + clC[1] * fy + clC[2] * fz) / ff;
+              if (tNew <= tCur + 1e-9) continue;
+              setCamCorrAt(basePos, baseLook, pos, look, i, dolly[i], clC[0], clC[1], clC[2]);
+              var ndC = projectAlong(pos, look, i3, px, py, pz, ctx.tanH * zoom[i], ctx.tanV * zoom[i]);
+              if (ndcFits(ndC, ctx)){
+                shift[i3] = clC[0]; shift[i3 + 1] = clC[1]; shift[i3 + 2] = clC[2];
+                changed = true;
+                break;
+              }
+              if (kkC >= kmC) break; /* later steps clamp to this same shift */
             }
           }
         }
@@ -12700,12 +12774,84 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       }
       return changed;
     }
+    /* POSITION-GRADED RATE STANDARD (Overview only) — the
+       rate limits are not one number for the whole frame:
+       they follow WHERE the aircraft sits in it. Deep inside
+       the usable frame the camera has margin to spare, so
+       every rate standard runs SLOW (down to
+       OVIEW_RATE_FLOOR × the usual standard): corrections
+       crawl, and the small back-and-forth adjustments that
+       read as jitter are spread into ramps too gentle to
+       see. As the aircraft approaches a fit margin the
+       standards rise back to their full values, so near the
+       edge the camera keeps its full 45°/s pan, its full
+       step caps and its full predictive zoom-out rate —
+       nothing about the in-frame guarantee's pace changes
+       where the guarantee is actually at stake.
+       The grading is a GRADIENT, never a switch: the
+       per-sample factor is a smoothstep of the aircraft's
+       normalized off-centre distance (0 at the centre of
+       the usable frame, 1 at a margin), and the factor
+       itself is then low-passed in WALL-CLOCK time
+       (σ ≈ 1.5 s, three box passes like every smoothing
+       here, and never less than one path sample), so an
+       aircraft hovering at the gradient's
+       boundary moves the standard only slowly — the rates
+       drift, they never step, and a drifting rate cannot
+       shake the frame the way a switching one would.
+       Computed ONCE per build, from the converged framing
+       after the initial correction rounds, and stored on
+       the context as ctx.panRateScale; every rate
+       enforcement below reads it — capCorrectionSteps (the
+       pan rate cap and the dolly / zoom step caps, per
+       neighbouring pair, at the pair's faster end), the
+       valve passes' own candidate clamps, the pull-in's
+       clamp, and the predictive zoom-out's rise rate.
+       Contexts that never set it (every other mode, and
+       Overview's own early rounds before it exists) keep
+       the ungraded standards exactly. */
+    var OVIEW_RATE_FLOOR = 0.35; /* the centre regime's rate, as a fraction of the full standard */
+    function overviewRateScale(pos, look, zoom, P, n, ctx){
+      var sT = ctx.safeTop != null ? ctx.safeTop : ctx.safeY; /* the top margin as an NDC coordinate (+0.6 for Overview) */
+      var sB = ctx.safeBot != null ? -ctx.safeBot : -ctx.safeY; /* the bottom margin as a SIGNED NDC coordinate (−1.0 for Overview): safeBot itself is stored as a magnitude — ndcFits tests nd.y >= −safeBot — so the sign is applied here, before the centre / half-height formulas below */
+      var CY = (sT + sB) / 2;   /* the centre of the usable frame (−0.2 for Overview): the midpoint of the signed top and bottom margins */
+      var hhY = (sT - sB) / 2;  /* its half height (0.8 for Overview): half the signed top-to-bottom span — positive, so ry below runs 0 at CY to 1 at either horizontal margin */
+      var m = new Float32Array(n);
+      for (var i = 0; i < n; i++){
+        var i3 = i * 3;
+        var nd = projectAlong(pos, look, i3, P[i3], P[i3 + 1], P[i3 + 2], ctx.tanH * zoom[i], ctx.tanV * zoom[i]);
+        var e = 1; /* behind the camera: the edge regime, full rate */
+        if (!nd.behind){
+          var rx = Math.abs(nd.x) / ctx.safeX;
+          var ry = Math.abs(nd.y - CY) / hhY;
+          var r = Math.max(rx, ry); /* the binding margin is the closer one, as in the fit test */
+          var t = (r - 0.45) / 0.45; /* the gradient band: the full centre regime inside 45% of the way to a margin, the full edge regime at 90% */
+          if (t < 0) t = 0; else if (t > 1) t = 1;
+          e = t * t * (3 - 2 * t);   /* smoothstep: no corner at either end of the band */
+        }
+        m[i] = OVIEW_RATE_FLOOR + (1 - OVIEW_RATE_FLOOR) * e;
+      }
+      /* The standard itself drifts slowly: low-pass the
+         factor in wall-clock time, so an aircraft wandering
+         around the gradient's boundary changes the rates
+         only gradually and the change itself can never step
+         the camera. */
+      var rr = Math.max(1, Math.min(n, Math.round(1.5 * state.speed / CAM_PATH_DT)));
+      if (rr > 0){
+        for (var p = 0; p < 3; p++) boxBlurPlain(m, n, rr);
+        for (var j = 0; j < n; j++){
+          if (m[j] < OVIEW_RATE_FLOOR) m[j] = OVIEW_RATE_FLOOR; else if (m[j] > 1) m[j] = 1;
+        }
+      }
+      return m;
+    }
     /* PAN DAMPING (Overview only) — a LOW-PASS over the shipped
        pan, the last layer of Overview's anti-hunting stack. The
        stack, in the order the path meets it: the DEADBAND (the
        fit margins — the frame used to the fullest except the
-       top HUD strip: sides and bottom to the very edges, NDC
-       ±1.0, the top guarded at +0.6; while the aircraft sits
+       top HUD strip and a 5% strip at each side: the sides at
+       NDC ±0.9, the bottom to the very edge, the top guarded
+       at +0.6; while the aircraft sits
        inside that range no pan demand exists at all, and
        every fit in this mode takes
        the SMALLEST step that puts the aircraft back inside the
@@ -12766,6 +12912,232 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       }
       return false;
     }
+    /* PAN STABILIZATION (Overview only) — the anti-drag
+       layer, run LAST over the shipped pan. The stages above
+       each chase the aircraft a little, and their chases add
+       up downstream of the damping pass: the centering pull
+       is re-applied round after round (each round adds a
+       low-pass of the REMAINING distance to the centred view,
+       so the rounds compound toward the instantaneous target
+       and a slice of any fast alternation in it leaks through
+       the filter), and the final pull-in's valve settle can
+       re-step the pan outright. The shipped pan can therefore
+       still swing back and forth with an aircraft that
+       oscillates rapidly around the centre of the frame —
+       the camera dragged by a motion it has the margin to
+       simply watch. This stage removes that component from
+       the pan itself, whatever stage put it there: the pan is
+       split into a SLOW trend (three box passes ≈ a Gaussian,
+       σ ≈ 2 s of wall time — wider than the damping pass's
+       predictive reach) and
+       the deviation from it, and only OVIEW_PAN_OSC_KEEP of
+       the deviation ships. A sustained pan — a real excursion
+       the camera must follow — lives in the trend and passes
+       untouched, with no lag (the filter is zero-phase); a
+       back-and-forth faster than the trend keeps only a
+       fraction of its swing, so near the centre the pan holds
+       nearly still while the aircraft shuttles inside the
+       margins, and the frame stops shaking with it. The
+       caller settles the result exactly like the damping
+       block (step caps, then a WIDEN-FIRST re-verify), so a
+       sample the filter leaves outside the margins is
+       re-fitted by the dolly / zoom rather than by re-stepping
+       the pan, the predictive zoom-out envelope is re-applied
+       to whatever the settle widened, and the in-frame
+       guarantee keeps the last word. Returns true when the
+       filter moved anything. */
+    var OVIEW_PAN_OSC_KEEP = 0.12; /* the fraction of the pan's fast deviation from its slow trend that ships */
+    function stabilizeOverviewPan(shift, n, ctx){
+      if (!ctx.panRateDegPerSec || n < 3) return false;
+      var rs = Math.max(0, Math.min(n, Math.round(2.0 * state.speed / CAM_PATH_DT))); /* the trend's reach: σ ≈ 2 s of wall time (see the header) */
+      if (rs < 1) return false;
+      var slow = new Float32Array(shift);
+      for (var p = 0; p < 3; p++){
+        boxBlurAxis(slow, n, 0, rs); boxBlurAxis(slow, n, 1, rs); boxBlurAxis(slow, n, 2, rs);
+      }
+      var changed = false;
+      for (var i = 0; i < n * 3; i++){
+        var v = slow[i] + OVIEW_PAN_OSC_KEEP * (shift[i] - slow[i]);
+        if (Math.abs(v - shift[i]) > 1e-9){ shift[i] = v; changed = true; }
+      }
+      return changed;
+    }
+    /* ZOOM STABILIZATION (Overview only) — the anti-breathing
+       layer, run LAST over the shipped ZOOM, the lens
+       counterpart of the pan stabilization above. The zoom
+       smoothing pass (σ ≈ 1 s) runs in the MIDDLE of the
+       pipeline, and the stages after it each re-shape the
+       lens a little: the holds bridge dips, the monotone legs
+       re-phase the widening, the final pull-in tightens
+       against the final pan, and the centering / pan
+       stabilization settles re-fit whatever their filtered
+       pans leave outside the margins through the dolly /
+       zoom — each re-fit is a local demand, so the shipped
+       lens can still alternate in and out around its trend:
+       the breathing this stage exists to remove. Like the pan
+       stabilization, it removes that component from the
+       channel itself, whatever stage put it there: the LOG
+       zoom factor (log space keeps the split ratio-symmetric,
+       as in the smoothing stage) is split into a SLOW trend
+       (three box passes ≈ a Gaussian, σ ≈ 2 s of wall time —
+       the same reach as the pan stabilization's trend) and
+       the deviation from it, and only OVIEW_ZOOM_OSC_KEEP of
+       the deviation ships. A sustained zoom — a real widening
+       or tightening the flight keeps needing — lives in the
+       trend and passes untouched, with no lag (the filter is
+       zero-phase); an in-out alternation faster than the
+       trend keeps only a fraction of its swing, so the lens
+       holds nearly still through it instead of breathing.
+       The result is clamped to the channel's own range (the
+       zoom-in floor to the zoom-out cap), and the caller
+       settles it exactly like the pan stabilization block
+       (step caps, then a WIDEN-FIRST re-verify), so a sample
+       the filter leaves under-widened is re-fitted by the
+       dolly / zoom rather than by re-stepping the pan, the
+       predictive zoom-out envelope is re-applied to whatever
+       the settle widened, and the in-frame guarantee keeps
+       the last word. Returns true when the lens moved
+       anywhere. */
+    var OVIEW_ZOOM_OSC_KEEP = 0.12; /* the fraction of the zoom's fast deviation from its slow trend that ships (the pan stabilization's standard) */
+    function stabilizeOverviewZoom(zoom, n, ctx){
+      if (!ctx.panRateDegPerSec || n < 3) return false;
+      var rs = Math.max(0, Math.min(n, Math.round(2.0 * state.speed / CAM_PATH_DT))); /* the trend's reach: σ ≈ 2 s of wall time (see the header) */
+      if (rs < 1) return false;
+      var zLo = ctx.zoomInMin || 1, zHi = ctx.zoomKMax || Infinity;
+      var lg = new Float32Array(n), slow = new Float32Array(n);
+      var i;
+      for (i = 0; i < n; i++){ lg[i] = Math.log(Math.max(1e-6, zoom[i])); slow[i] = lg[i]; }
+      for (var p = 0; p < 3; p++) boxBlurPlain(slow, n, rs);
+      var changed = false;
+      for (i = 0; i < n; i++){
+        var z = Math.exp(slow[i] + OVIEW_ZOOM_OSC_KEEP * (lg[i] - slow[i]));
+        if (z < zLo) z = zLo; else if (z > zHi) z = zHi;
+        if (Math.abs(z - zoom[i]) > 1e-9){ zoom[i] = z; changed = true; }
+      }
+      return changed;
+    }
+    /* ZOOM EDGE LATCH (Overview only) — the boundary
+       hysteresis the stages above deliberately do not have,
+       and the reason the lens could still breathe at the
+       frame edge after the stabilization pass. Overview's
+       zoom is exempt from the channel hold (ctx.zoomReleaseOnFit:
+       it releases the moment the aircraft is back inside the
+       fit margins), its monotone legs turn on a shallow 1.05x
+       reversal, and the stabilization settle re-fits a
+       boundary sample to its exact instantaneous demand AFTER
+       the trend filter has run — so an aircraft shuttling
+       across the frame-in / frame-out boundary re-raises the
+       lens to the full demand on every exit and lets it fall
+       back on every return: a breathing at the crossing
+       frequency and the full demand amplitude, which no
+       low-pass on the channel can remove, because the settle
+       re-creates the peaks downstream of it. This stage is
+       the last word on the lens and gives the boundary a
+       proper hysteresis, in log space (ratio-symmetric, as in
+       every zoom stage). A first version of the latch (band
+       1.15x, a fixed 3 s dwell, a log 0.5/s release glide)
+       stopped the fast shuttles but still breathed on slower
+       ones: an inside phase longer than the dwell started a
+       release every cycle, and the fast glide let the lens
+       fall most of the way before the next exit re-raised it.
+       The latch is therefore hardened on all three axes —
+       a wider band, a much slower glide, and a dwell that
+       ESCALATES while the boundary keeps flapping:
+         ENGAGE — a widening the fit demands is taken at once:
+           the held level rises to the demand the moment the
+           demand reaches it, so the in-frame guarantee is
+           never delayed.
+         HOLD — the held level then does not fall at all while
+           the demand stays within OVIEW_EDGE_BAND of it (the
+           aircraft still near the edge that asked for the
+           widening): inside the band the release clock does
+           not even run. The band is 1.25x, so a shallow return
+           — the aircraft just inside, still needing most of
+           the widening — never starts the clock at all; only
+           a demand below peak / 1.25 counts as back inside.
+         RELEASE — only once the demand has stayed BELOW the
+           band continuously for the CURRENT dwell requirement
+           (the aircraft genuinely back inside, not just
+           touching the margin) does the held level glide down
+           toward the demand, at OVIEW_EDGE_GLIDE (log 0.15
+           per wall second — under a third of the predictive
+           envelope's rate), so even a release that does run
+           moves the lens slowly enough that a returning exit
+           meets it most of the way up. The band is measured
+           from the PEAK the latch is holding, not from the
+           falling level, so a release once started runs all
+           the way to the demand instead of stalling one band
+           above it.
+         FLAP DAMPING — the dwell requirement is not fixed.
+           It starts at OVIEW_EDGE_DWELL (3 s), and every
+           INTERRUPTED release doubles it, up to
+           OVIEW_EDGE_DWELL_MAX (24 s): an interruption is the
+           aircraft coming back while a release was armed or
+           running — a re-engagement while the clock was
+           running or a glide was under way, or a return into
+           the band after the clock had run at least half the
+           requirement. A shuttle that fools the latch once
+           therefore faces 6 s, then 12 s, then 24 s of
+           continuous inside time before the lens moves again,
+           so repeated boundary crossings stop switching the
+           zoom altogether instead of merely slowing the
+           switches. While the latch is inactive (the shipped
+           value is the demand itself — no widening held), the
+           requirement relaxes back toward the base with a
+           OVIEW_EDGE_RELAX time constant, so a boundary
+           episode long past does not leave the lens stubborn
+           for an unrelated excursion later in the flight.
+       The constants are fixed wall-clock standards, decoupled
+       from the Follow Smoothness slider exactly as Overview's
+       release strictness has always been (see
+       holdCorrectionChannels). Raising-only against its input
+       (the shipped value is the demand or the held level,
+       whichever is wider), so every sample and midpoint fit
+       survives untouched and no settle rounds are needed; and
+       its rises never exceed the input's own rises (the held
+       level only follows a demand that is already there, from
+       a level at or above the previous demand), which the
+       predictive envelope has already capped — so the latch
+       cannot introduce a step the envelope would have had to
+       pre-ramp. Returns true when the lens moved anywhere. */
+    var OVIEW_EDGE_BAND = Math.log(1.25); /* how far below the held level the demand must fall before the release clock even runs: a demand inside the band means the boundary is still near */
+    var OVIEW_EDGE_DWELL = 3.0; /* the base dwell: wall seconds the demand must stay below the band, continuously, before the held widening is released — doubles on every interrupted release (see FLAP DAMPING in the header) */
+    var OVIEW_EDGE_DWELL_MAX = 24.0; /* the cap on the escalated dwell requirement */
+    var OVIEW_EDGE_GLIDE = 0.15; /* the release glide's max log fall per wall second: deliberately far slower than the predictive envelope's log 0.5/s rise, so a release in progress has barely moved when a returning exit re-latches it */
+    var OVIEW_EDGE_RELAX = 15.0; /* wall-second time constant with which the escalated dwell requirement relaxes back to the base while the latch is inactive */
+    function latchOverviewEdgeZoom(zoom, n, ctx){
+      if (!ctx.panRateDegPerSec || n < 3) return false;
+      var dtWall = CAM_PATH_DT / Math.max(0.25, state.speed); /* wall-clock seconds per path sample, as in predictOverviewZoomOut */
+      var fallStep = OVIEW_EDGE_GLIDE * dtWall; /* the release glide's max log fall per sample */
+      var relax = Math.exp(-dtWall / OVIEW_EDGE_RELAX); /* per-sample decay of the escalated dwell toward the base while the latch is inactive */
+      var held = Math.log(Math.max(1e-6, zoom[0]));
+      var peak = held; /* the level the current latch is holding from: the band is measured against it, so a release once started runs to the demand (see the header) */
+      var clear = 0; /* wall seconds the demand has spent continuously below the band */
+      var dwellReq = OVIEW_EDGE_DWELL; /* the current dwell requirement: escalates on interrupted releases, relaxes while inactive (see the header) */
+      var changed = false;
+      for (var i = 0; i < n; i++){
+        var lg = Math.log(Math.max(1e-6, zoom[i]));
+        if (lg >= held){
+          if (clear > 0 || held < peak) dwellReq = Math.min(dwellReq * 2, OVIEW_EDGE_DWELL_MAX); /* INTERRUPTED: the aircraft came back while the release clock was running or a glide was under way — the next release must wait twice as long */
+          held = lg; peak = lg; clear = 0; /* ENGAGE: take the demanded widening at once */
+        } else if (lg <= peak - OVIEW_EDGE_BAND){
+          clear += dtWall; /* genuinely back inside: the release clock runs */
+          if (clear >= dwellReq){
+            var nh = held - fallStep; /* RELEASE: glide down toward the demand, never below it */
+            held = nh > lg ? nh : lg;
+            if (held <= lg){ peak = held; clear = 0; } /* fully released: the next excursion latches fresh */
+          }
+        } else {
+          if (held < peak || clear >= 0.5 * dwellReq) dwellReq = Math.min(dwellReq * 2, OVIEW_EDGE_DWELL_MAX); /* INTERRUPTED: a glide was under way, or the clock had run at least half the requirement, and the demand came back into the band — the boundary is still flapping */
+          clear = 0; /* HOLD: within the band the boundary is still near — the clock does not run */
+          if (held < peak) peak = held; /* a release interrupted mid-glide re-latches at the level it reached */
+        }
+        if (held <= lg) dwellReq = OVIEW_EDGE_DWELL + (dwellReq - OVIEW_EDGE_DWELL) * relax; /* the latch is inactive at this sample (nothing held above the demand): the escalated requirement relaxes toward the base */
+        var z = Math.exp(held);
+        if (Math.abs(z - zoom[i]) > 1e-9){ zoom[i] = z; changed = true; }
+      }
+      return changed;
+    }
     /* CENTERING (Overview only) — the pan eases the aircraft
        toward the CENTRE of the usable frame, not merely back
        inside its edges. The fit machinery above is range-
@@ -12801,9 +13173,9 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       if (!ctx.panRateDegPerSec || n < 3) return false;
       var rp = Math.max(0, Math.min(n, Math.round(1.5 * state.speed / CAM_PATH_DT))); /* the predictive reach, as in dampOverviewPan */
       if (rp < 1) return false;
-      var sT = ctx.safeTop != null ? ctx.safeTop : ctx.safeY;
-      var sB = ctx.safeBot != null ? ctx.safeBot : ctx.safeY;
-      var CY = (sT - sB) / 2; /* the centre of the usable frame (−0.2 for Overview) */
+      var sT = ctx.safeTop != null ? ctx.safeTop : ctx.safeY; /* the top margin as an NDC coordinate (+0.6 for Overview) */
+      var sB = ctx.safeBot != null ? -ctx.safeBot : -ctx.safeY; /* the bottom margin as a SIGNED NDC coordinate (−1.0 for Overview), as in overviewRateScale */
+      var CY = (sT + sB) / 2; /* the centre of the usable frame (−0.2 for Overview): the midpoint of the signed top and bottom margins — the same centre overviewRateScale grades against, so the pull and the rate grading agree on where "inner" is */
       var delta = new Float32Array(n * 3);
       var i, i3;
       for (i = 0; i < n; i++){
@@ -12934,7 +13306,15 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
        sample takes the max of its own demand and the next
        sample's enveloped value minus one sample's worth of
        rate, so a brief excursion's valley is bridged from the
-       next peak's ramp as well. Only rises are rate-limited
+       next peak's ramp as well. The rise rate itself is
+       position-graded (see overviewRateScale): scaled by
+       each sample's rate factor, so the early part of a
+       ramp — flown while the aircraft is still near the
+       centre — rises more gently and simply starts sooner,
+       while the approach to the margin runs at the full
+       rate; the envelope stays the least profile under the
+       graded rate field, and the arrival exactly at the
+       demand is unchanged. Only rises are rate-limited
        here: the return (zoom-in) keeps its release-on-fit
        behaviour and the smoothing stage's low-pass — zooming
        back in is a good in itself in this mode and was never
@@ -12950,8 +13330,9 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       var lg = new Float32Array(n);
       var i;
       for (i = 0; i < n; i++) lg[i] = Math.log(Math.max(1e-6, zoom[i]));
+      var rsZ = ctx.panRateScale || null;
       for (i = n - 2; i >= 0; i--){
-        var lead = lg[i + 1] - step;
+        var lead = lg[i + 1] - step * (rsZ ? rsZ[i] : 1); /* the rise rate at sample i's position-graded standard (see overviewRateScale): gentler while the aircraft is still near the centre — the ramp simply starts earlier — and the full rate as it nears the margin */
         if (lg[i] < lead) lg[i] = lead;
       }
       var changed = false;
@@ -13100,6 +13481,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       var capD = Math.pow(1.25, 1 / spf), capZ = Math.pow(1.18, 1 / spf);
       var invD = 1 / capD, invZ = 1 / capZ;
       var capS = 0.45 * ctx.dist / spf;
+      var rsC = ctx.panRateScale || null; /* Overview's position-graded rate factor per sample (see overviewRateScale); null for every other mode */
       /* Pass counts per call stay small: the caller's convergence
          loop re-invokes the caps every round, so ramps finish
          forming across rounds without one call costing O(n ×
@@ -13111,10 +13493,16 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
            a step of any width. */
         var i0 = (pass % 2 === 0) ? 0 : n - 2, i1 = (pass % 2 === 0) ? n - 1 : -1, di = (pass % 2 === 0) ? 1 : -1;
         for (i = i0; i !== i1; i += di){
-          var hd = Math.max(dolly[i], dolly[i + 1]) * invD;
+          /* With the graded standard the pair's ratio cap is
+             the standard cap raised to the pair's rate factor
+             (the pair's faster end, so a step toward the edge
+             is never the slowed one): a full cap at the
+             margins, a gentler one near the centre. */
+          var pScale = rsC ? Math.max(rsC[i], rsC[i + 1]) : 1;
+          var hd = Math.max(dolly[i], dolly[i + 1]) * (pScale === 1 ? invD : Math.pow(invD, pScale));
           if (dolly[i] < hd){ dolly[i] = hd; any = true; }
           if (dolly[i + 1] < hd){ dolly[i + 1] = hd; any = true; }
-          var hz = Math.max(zoom[i], zoom[i + 1]) * invZ;
+          var hz = Math.max(zoom[i], zoom[i + 1]) * (pScale === 1 ? invZ : Math.pow(invZ, pScale));
           if (zoom[i] < hz){ zoom[i] = hz; any = true; }
           if (zoom[i + 1] < hz){ zoom[i + 1] = hz; any = true; }
         }
@@ -13151,21 +13539,27 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
          channels — for Overview the dolly valve, then the
          zoom — which is exactly the relief the cap exists to
          trigger. Modes without panRateDegPerSec keep the
-         shared cap untouched. */
+         shared cap untouched. Where ctx.panRateScale is set
+         (Overview, once its graded standard is computed —
+         see overviewRateScale) both caps are additionally
+         scaled per neighbouring pair by the pair's position
+         factor: slower near the centre of the usable frame,
+         the full standard at its margins. */
       var rateCap = null;
       if (ctx.panRateDegPerSec){
         var dtWall = CAM_PATH_DT / Math.max(0.25, state.speed);
         rateCap = ctx.panRateDegPerSec * Math.PI / 180 * dtWall * ctx.dist * 0.5774;
       }
+      var capPBase = rateCap !== null ? Math.min(capC, rateCap) : capC;
       for (var c7 = 0; c7 < 3; c7++){
         for (i = 0; i < n - 1; i++){
-          var capP = rateCap !== null ? Math.min(capC, rateCap) : capC;
+          var capP = rsC ? capPBase * Math.max(rsC[i], rsC[i + 1]) : capPBase;
           var lo = shift[i * 3 + c7] - capP, hi = shift[i * 3 + c7] + capP;
           if (shift[(i + 1) * 3 + c7] < lo){ shift[(i + 1) * 3 + c7] = lo; changed = true; }
           else if (shift[(i + 1) * 3 + c7] > hi){ shift[(i + 1) * 3 + c7] = hi; changed = true; }
         }
         for (i = n - 2; i >= 0; i--){
-          var capP2 = rateCap !== null ? Math.min(capC, rateCap) : capC;
+          var capP2 = rsC ? capPBase * Math.max(rsC[i], rsC[i + 1]) : capPBase;
           var lo2 = shift[(i + 1) * 3 + c7] - capP2, hi2 = shift[(i + 1) * 3 + c7] + capP2;
           if (shift[i * 3 + c7] < lo2){ shift[i * 3 + c7] = lo2; changed = true; }
           else if (shift[i * 3 + c7] > hi2){ shift[i * 3 + c7] = hi2; changed = true; }
@@ -13615,6 +14009,15 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       }
       corrSamples(basePos, baseLook, dolly, zoom, shift, pos, look, P, n, ctx);
       applyCorr(basePos, baseLook, dolly, shift, pos, look, n);
+      /* POSITION-GRADED RATE STANDARD (Overview only, see
+         overviewRateScale): from here on, every rate the
+         stages below enforce — the step caps in the settle
+         rounds, the valve and pull-in clamps, the predictive
+         zoom-out's rise — is graded by where the aircraft
+         sits in this converged framing: slow near the centre
+         of the usable frame, full at its margins, a smooth
+         gradient between. */
+      if (OV) ctx.panRateScale = overviewRateScale(pos, look, zoom, P, n, ctx);
       var holdDist = (mode === 'overview')
         ? Math.sqrt(Math.pow(basePos[0] - baseLook[0], 2) + Math.pow(basePos[1] - baseLook[1], 2) + Math.pow(basePos[2] - baseLook[2], 2))
         : null;
@@ -13667,14 +14070,25 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
          passes (samples and midpoints) re-verify, keeping the
          last word on the in-frame guarantee — they re-widen
          only where a capped pan truly cannot hold the
-         pulled-in framing. */
-      if (OV && tightenOverviewPull(basePos, baseLook, dolly, zoom, shift, pos, look, P, n, ctx)){
-        applyCorr(basePos, baseLook, dolly, shift, pos, look, n);
-        for (var tr = 0; tr < 2; tr++){
-          if (capCorrectionSteps(dolly, zoom, shift, n, ctx)) applyCorr(basePos, baseLook, dolly, shift, pos, look, n);
-          corrSamples(basePos, baseLook, dolly, zoom, shift, pos, look, P, n, ctx);
-          corrMid(basePos, baseLook, dolly, zoom, shift, pos, look, n, total, ctx);
+         pulled-in framing. The pull-in is applied REPEATEDLY
+         (up to three rounds, stopping when a round changes
+         nothing): each settle forms the pan's capped ramps
+         from the shifts the last round committed, and the
+         next round's candidates clamp against those ramped
+         neighbours, so a pan demand too large for one pass —
+         a far aircraft whose centring pan is many capped
+         steps away — is walked in over the rounds instead of
+         being refused outright. */
+      if (OV){
+        for (var pr = 0; pr < 3; pr++){
+          if (!tightenOverviewPull(basePos, baseLook, dolly, zoom, shift, pos, look, P, n, ctx)) break;
           applyCorr(basePos, baseLook, dolly, shift, pos, look, n);
+          for (var tr = 0; tr < 2; tr++){
+            if (capCorrectionSteps(dolly, zoom, shift, n, ctx)) applyCorr(basePos, baseLook, dolly, shift, pos, look, n);
+            corrSamples(basePos, baseLook, dolly, zoom, shift, pos, look, P, n, ctx);
+            corrMid(basePos, baseLook, dolly, zoom, shift, pos, look, n, total, ctx);
+            applyCorr(basePos, baseLook, dolly, shift, pos, look, n);
+          }
         }
       }
       /* PAN DAMPING (Overview only, see dampOverviewPan): a
@@ -13812,6 +14226,176 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
          Raising-only either way, so every fit still holds. */
       var monoZ = monotonizeWideningChannel(zoom, n, ctx.zoomMonoLog);
       if (monoD || monoZ) applyCorr(basePos, baseLook, dolly, shift, pos, look, n);
+      /* FINAL PULL-IN (Overview only): the question the first
+         pull-in asked is asked once more, now against the
+         FINAL pan. The stages between the two — the pan
+         damping and centering settles (widen-first: a sample
+         their filtered pan leaves outside is re-fitted by the
+         dolly / zoom) and the zoom smoothing (a log-space
+         average, which lifts a tight lens toward wide
+         neighbours) — can each hand framing work back to the
+         widening channels, and the centering stage's pan can
+         make a tighter lens holdable that was not holdable
+         when the first pull-in ran; without this re-check the
+         path could still ship a long, quiet stretch — a far
+         aircraft holding still — at the widened framing those
+         stages left behind. Settled exactly like the first
+         pull-in (step caps, then Overview's valve passes
+         re-verify, the guarantee keeping the last word), and
+         the predictive zoom-out envelope is re-applied to the
+         pulled lens afterwards, so a widening the flight is
+         about to need still ramps in ahead of the frame edge
+         instead of jumping there — the pull-in never trades
+         the no-jump guarantee for tightness. */
+      if (OV && tightenOverviewPull(basePos, baseLook, dolly, zoom, shift, pos, look, P, n, ctx)){
+        applyCorr(basePos, baseLook, dolly, shift, pos, look, n);
+        for (var fr3 = 0; fr3 < 2; fr3++){
+          if (capCorrectionSteps(dolly, zoom, shift, n, ctx)) applyCorr(basePos, baseLook, dolly, shift, pos, look, n);
+          corrSamples(basePos, baseLook, dolly, zoom, shift, pos, look, P, n, ctx);
+          corrMid(basePos, baseLook, dolly, zoom, shift, pos, look, n, total, ctx);
+          applyCorr(basePos, baseLook, dolly, shift, pos, look, n);
+        }
+        predictOverviewZoomOut(zoom, n, ctx);
+      }
+      /* FINAL CENTERING — INNER KEEP (Overview only, see
+         centerOverviewPan): the centering stage above runs
+         BEFORE the zoom smoothing, the holds / monotone legs
+         and the final pull-in, and the pull-in in particular
+         trades centredness for tightness — its fit standard
+         is the full margins, so a path the centering stage
+         left near the centre can still ship riding near an
+         edge once the lens has been pulled in around the
+         final pan. This last pass asks the centering question
+         once more, against the FINAL channels, so the shipped
+         path keeps trying to hold the aircraft in the INNER
+         region of the usable frame — near its centre (NDC x 0,
+         y CY) — and not merely inside its edges: wherever the
+         capped, low-passed pan can still ease the aircraft
+         inward at the end of the build, it does. Settled
+         exactly like the centering block above (step caps,
+         then a WIDEN-FIRST re-verify — a sample the pull
+         leaves outside the margins is re-fitted by the dolly
+         / zoom, not by re-stepping the pan), with the pull
+         re-applied between rounds; the predictive zoom-out
+         envelope is re-applied to the settled lens
+         afterwards, so a widening the settle landed still
+         ramps in ahead of the frame edge instead of jumping
+         there. No pull-in runs after this stage, so nothing
+         downstream can trade the inner framing back for
+         tightness — the in-frame guarantee, through the
+         widening channels, keeps the last word, exactly as
+         in every settle above. The viewpoint search grades
+         this same shipped path (see buildOneCamPath's use in
+         grade), so its centering tier rewards the inner keep
+         automatically. */
+      if (OV && centerOverviewPan(basePos, baseLook, dolly, zoom, shift, pos, look, P, n, ctx)){
+        applyCorr(basePos, baseLook, dolly, shift, pos, look, n);
+        for (var cr2 = 0; cr2 < 4; cr2++){
+          var chF = false;
+          if (capCorrectionSteps(dolly, zoom, shift, n, ctx)){ applyCorr(basePos, baseLook, dolly, shift, pos, look, n); chF = true; }
+          if (correctCamSamples(basePos, baseLook, dolly, zoom, shift, pos, look, P, n, ctx)) chF = true;
+          if (correctCamMidpoints(basePos, baseLook, dolly, zoom, shift, pos, look, n, total, ctx)) chF = true;
+          applyCorr(basePos, baseLook, dolly, shift, pos, look, n);
+          if (capCorrectionSteps(dolly, zoom, shift, n, ctx)){ applyCorr(basePos, baseLook, dolly, shift, pos, look, n); chF = true; }
+          if (!chF) break;
+          if (cr2 < 3 && centerOverviewPan(basePos, baseLook, dolly, zoom, shift, pos, look, P, n, ctx)) applyCorr(basePos, baseLook, dolly, shift, pos, look, n);
+        }
+        predictOverviewZoomOut(zoom, n, ctx);
+      }
+      /* PAN STABILIZATION — ANTI-DRAG (Overview only, see
+         stabilizeOverviewPan): the very last word on the pan.
+         Every stage above can leave a fast back-and-forth in
+         the shipped shift — the damping pass runs BEFORE the
+         centering stages, whose repeated pulls compound toward
+         the instantaneous centred view, and the final pull-in's
+         valve settle re-steps the pan after both — so an
+         aircraft shuttling rapidly around the centre can still
+         drag the camera with it. This stage runs after the
+         final centering, when nothing downstream shapes the
+         pan any more: it keeps the pan's slow trend in full
+         and only a small fraction of its fast deviation, so
+         the pan stays put through a centre oscillation and
+         follows only real, sustained excursions. Settled
+         exactly like the damping block (step caps, then a
+         WIDEN-FIRST re-verify — a sample the filter leaves
+         outside the margins is re-fitted by the dolly / zoom,
+         not by re-stepping the pan), with the filter re-applied
+         between rounds and the predictive zoom-out envelope
+         re-applied to the settled lens afterwards, so the
+         in-frame guarantee keeps the last word, as everywhere
+         above. The zoom is otherwise untouched by this stage:
+         it reads and writes the pan channel only. */
+      if (OV && stabilizeOverviewPan(shift, n, ctx)){
+        applyCorr(basePos, baseLook, dolly, shift, pos, look, n);
+        for (var sr = 0; sr < 4; sr++){
+          var chS = false;
+          if (capCorrectionSteps(dolly, zoom, shift, n, ctx)){ applyCorr(basePos, baseLook, dolly, shift, pos, look, n); chS = true; }
+          if (correctCamSamples(basePos, baseLook, dolly, zoom, shift, pos, look, P, n, ctx)) chS = true;
+          if (correctCamMidpoints(basePos, baseLook, dolly, zoom, shift, pos, look, n, total, ctx)) chS = true;
+          applyCorr(basePos, baseLook, dolly, shift, pos, look, n);
+          if (capCorrectionSteps(dolly, zoom, shift, n, ctx)){ applyCorr(basePos, baseLook, dolly, shift, pos, look, n); chS = true; }
+          if (!chS) break;
+          if (sr < 3 && stabilizeOverviewPan(shift, n, ctx)) applyCorr(basePos, baseLook, dolly, shift, pos, look, n);
+        }
+        predictOverviewZoomOut(zoom, n, ctx);
+      }
+      /* ZOOM STABILIZATION — ANTI-BREATHING (Overview only,
+         see stabilizeOverviewZoom): the very last word on the
+         lens. Every stage above can leave a fast in-out
+         alternation in the shipped zoom — the smoothing pass
+         runs BEFORE the holds, the monotone legs, the final
+         pull-in and both stabilization settles, and each of
+         those re-shapes the lens from local demands — so the
+         lens can still breathe even though no single stage
+         steps. This stage runs after the pan stabilization,
+         when nothing downstream shapes the zoom any more: it
+         keeps the lens's slow trend in full and only a small
+         fraction of its fast deviation, so the lens holds
+         nearly still through a rapid alternation and follows
+         only real, sustained widenings and tightenings.
+         Settled exactly like the pan stabilization block
+         (step caps, then a WIDEN-FIRST re-verify — a sample
+         the filter leaves under-widened is re-fitted by the
+         dolly / zoom, not by re-stepping the pan), with the
+         filter re-applied between rounds and the predictive
+         zoom-out envelope re-applied to the settled lens
+         afterwards, so the in-frame guarantee keeps the last
+         word, as everywhere above. */
+      if (OV && stabilizeOverviewZoom(zoom, n, ctx)){
+        applyCorr(basePos, baseLook, dolly, shift, pos, look, n);
+        for (var zsr = 0; zsr < 4; zsr++){
+          var chZS = false;
+          if (capCorrectionSteps(dolly, zoom, shift, n, ctx)){ applyCorr(basePos, baseLook, dolly, shift, pos, look, n); chZS = true; }
+          if (correctCamSamples(basePos, baseLook, dolly, zoom, shift, pos, look, P, n, ctx)) chZS = true;
+          if (correctCamMidpoints(basePos, baseLook, dolly, zoom, shift, pos, look, n, total, ctx)) chZS = true;
+          applyCorr(basePos, baseLook, dolly, shift, pos, look, n);
+          if (capCorrectionSteps(dolly, zoom, shift, n, ctx)){ applyCorr(basePos, baseLook, dolly, shift, pos, look, n); chZS = true; }
+          if (!chZS) break;
+          if (zsr < 3 && stabilizeOverviewZoom(zoom, n, ctx)) applyCorr(basePos, baseLook, dolly, shift, pos, look, n);
+        }
+        predictOverviewZoomOut(zoom, n, ctx);
+      }
+      /* ZOOM EDGE LATCH — BOUNDARY HYSTERESIS (Overview only,
+         see latchOverviewEdgeZoom): the very last word on the
+         lens, after the stabilization settle has had its say.
+         The settle's re-fits are exact instantaneous demands,
+         so at the frame edge they re-raise the lens on every
+         exit and let it fall back on every return — the
+         breathing the trend filter cannot reach, because it
+         is created downstream of it. The latch holds any
+         widening the edge demanded until the demand has
+         stayed below its hysteresis band for a continuous
+         wall-clock dwell (the aircraft genuinely back inside,
+         not just touching the margin), then releases it in a
+         slow capped glide — and every release the shuttling
+         interrupts doubles the dwell the next one must wait
+         out, so while the aircraft shuttles around the
+         boundary the lens simply stays where the last exit
+         put it and the in-out switching stops altogether
+         instead of merely slowing down. Raising-only, so no
+         settle follows it and the in-frame guarantee keeps
+         the last word, as everywhere above. */
+      if (OV) latchOverviewEdgeZoom(zoom, n, ctx);
       /* The path's per-sample lens: the set FOV widened by the
          sample's zoom factor, in degrees. */
       var fov = new Float32Array(n);
@@ -13918,7 +14502,11 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
              the correction's size), enforced between samples
              by capCorrectionSteps and mirrored by the valve /
              midpoint / pull-in clamps (Overview only — the
-             tracking contexts never set it). That absolute
+             tracking contexts never set it). It is also
+             POSITION-GRADED: toward the centre of the usable
+             frame the enforced rate eases smoothly down to
+             0.35× of it (see overviewRateScale), returning to
+             the full 45°/s at the margins. That absolute
              pace is what lets the pull-out caps below sit as
              low as they do: the pan catches excursions itself
              instead of falling through to the dolly / zoom
@@ -13978,15 +14566,16 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
              the trajectory algorithm takes as much of it as
              the frame allows, and the viewpoint search rewards
              it (the apparent-distance tier of its objective).
-           - FIT MARGINS (the correction deadband), using the
-             frame to the fullest: the aircraft may ride to
-             the very frame edges on the sides and the bottom
-             (safeX / safeBot = 1.0); only the TOP is guarded,
-             at NDC +0.6, because the top ~20% of the frame
-             is where the HUD sits. Inside that zone no
-             correction fires at all. The tracking contexts
-             set no safeTop / safeBot and keep the symmetric
-             0.88 / 0.84 standard. */
+           - FIT MARGINS (the correction deadband): the
+             aircraft may ride to the bottom frame edge
+             (safeBot = 1.0), but the SIDES stop 5% of the
+             frame width in from each edge (safeX = 0.9, NDC
+             ±0.9) — the aircraft never crosses that line;
+             and the TOP is guarded at NDC +0.6, because the
+             top ~20% of the frame is where the HUD sits.
+             Inside that zone no correction fires at all.
+             The tracking contexts set no safeTop / safeBot
+             and keep the symmetric 0.88 / 0.84 standard. */
       var distSet = state.camDist * camAspectDistScale();
       var ovDist = manualCam.init ? manualCam.pos.distanceTo(manualCam.look) : distSet;
       return Object.assign({}, ctx, {
@@ -13997,7 +14586,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
         zoomReleaseOnFit: true,
         zoomInMin: Math.tan(20 * Math.PI / 360) / tanV, /* the zoom-in floor: the pull-in may tighten the lens below the set FOV, down to a 20° effective FOV (see the header) */
         zoomMonoLog: Math.log(1.05),
-        safeX: 1.0,
+        safeX: 0.9, /* the sides stop 5% of the frame width in from each edge (NDC ±0.9): the aircraft never crosses that line */
         safeTop: 0.6,
         safeBot: 1.0,
         panRateDegPerSec: 45,
