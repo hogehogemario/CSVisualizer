@@ -580,8 +580,8 @@
         <button type="button" data-aspect="9:16" class="on">9:16 Portrait</button>
       </div>
       <div class="ctl" data-tip-title="Altitude Exaggeration" data-tip="Altitude stretch. ↓ flatter (0 = ground). ↑ taller.">
-        <label for="altScale">Altitude Exaggeration <span class="val" id="altScaleVal">×0.5</span></label>
-        <input type="range" id="altScale" min="0" max="3" step="0.1" value="0.5" />
+        <label for="altScale">Altitude Exaggeration <span class="val" id="altScaleVal">×5.0</span></label>
+        <input type="range" id="altScale" min="0" max="20" step="0.1" value="5" />
       </div>
       <div class="ctl" data-tip-title="Trail Length" data-tip="Trail history. ↓ shorter. ↑ longer. 0 = hidden.">
         <label for="trailLen">Trail Length (Hours Back) <span class="val" id="trailLenVal">1 h</span></label>
@@ -592,8 +592,8 @@
         </div>
       </div>
       <div class="ctl" data-tip-title="Trail Thickness" data-tip="Trail width. ↓ thinner. ↑ thicker.">
-        <label for="trailWidth">Trail Thickness <span class="val" id="trailWidthVal">2.5</span></label>
-        <input type="range" id="trailWidth" min="0.5" max="10" step="0.5" value="2.5" />
+        <label for="trailWidth">Trail Thickness <span class="val" id="trailWidthVal">5.0</span></label>
+        <input type="range" id="trailWidth" min="0.5" max="10" step="0.5" value="5" />
       </div>
       <div class="ctl">
         <label for="globalColor">Trail &amp; Aircraft Color (All Flights) <span class="val" id="globalColorVal">#ff0000</span></label>
@@ -626,9 +626,9 @@
         <button type="button" data-cam="overview">Overview</button>
         <button type="button" data-cam="free">Free</button>
       </div>
-      <div class="ctl" id="ctlCamDist" data-tip-title="Camera Distance" data-tip="Camera distance. ↓ closer. ↑ wider view.">
-        <label for="camDist">Camera Distance <span class="val" id="camDistVal">25</span></label>
-        <input type="range" id="camDist" min="10" max="120" step="1" value="25" />
+      <div class="ctl" id="ctlCamDist" data-tip-title="Camera Distance" data-tip="Camera distance in km on the chart. The slider range follows the chart span, so the same slider position frames the same way on any flight. ↓ closer. ↑ wider view.">
+        <label for="camDist">Camera Distance <span class="val" id="camDistVal">11 km</span></label>
+        <input type="range" id="camDist" min="1" max="100" step="1" value="11" />
       </div>
       <div class="ctl" id="ctlCamPitch" data-tip-title="Camera Pitch" data-tip="Camera angle. ↓ horizon view. ↑ looking down.">
         <label for="camPitch">Camera Pitch <span class="val" id="camPitchVal">20°</span></label>
@@ -690,8 +690,8 @@
       <div class="ctl">
         <label for="recRes">Recording Resolution</label>
         <select class="sel" id="recRes">
-          <option value="display" selected>Display Size (Same as On Screen)</option>
-          <option value="1080">1920×1080 Full HD (1080×1920 in 9:16)</option>
+          <option value="display">Display Size (Same as On Screen)</option>
+          <option value="1080" selected>1920×1080 Full HD (1080×1920 in 9:16)</option>
           <option value="1440">2560×1440 QHD (1440×2560 in 9:16)</option>
           <option value="2160">3840×2160 4K UHD (2160×3840 in 9:16)</option>
         </select>
@@ -7628,16 +7628,16 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       progress: 0,
       speed: 60,
       globalColor: '#ff0000',
-      altScale: 0.5,
+      altScale: 5,
       trailHours: 1,
-      trailWidth: 2.5,
+      trailWidth: 5,
       fullRouteWidth: 2,
       fullRouteOpacity: 0.5,
       fullRouteColor: '#0000ff',
       useTargetDuration: true,
       targetDurationSec: 30,
       camMode: 'orbit',
-      camDist: 25,
+      camDist: 11,   /* kilometres on the chart (see camDistWorld) — 11 km reproduces the framing the old raw-unit 25 gave on the SAMPLE */
       camPitch: 20,
       camFov: 30,
       orbitSpeed: 36,
@@ -7658,8 +7658,8 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
     var ambLight = null, sunLight = null, starMat = null;
     var skyCur = new THREE.Color(0x7fb0dc);
     var camTransT = 0;
-    var activeChartMat = null, activeChartMesh = null;
-    var localGround = null, localGrid = null, localGroundMat = null;
+    var activeChartMesh = null;   /* the chart holder group (see rebuildLocalWorld) */
+    var localGround = null, localGroundMat = null;
     var keyframes = [];
     var kfSeq = 0;
 
@@ -7720,6 +7720,100 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       var want = Math.tan(state.camFov * Math.PI / 360) * REF_ASPECT;
       var got = Math.tan(effectiveCamFovDeg() * Math.PI / 360) * VIEW_ASPECT;
       return Math.max(1, Math.min(1.8, want / Math.max(0.05, got)));
+    }
+    /* Camera Distance is specified in KILOMETRES ON THE CHART:
+       the real aircraft-to-camera distance measured on the map.
+       The local frame spans K world units per degree and a
+       degree is 111.32 km, so one chart kilometre is
+       K / 111.32 world units on the current frame — the same
+       setting is the same chart distance whatever the flight's
+       span (before, the setting was raw world units, so the
+       same number meant ~11 km on the SAMPLE but ~550 km on a
+       transcontinental flight). The portrait compensation
+       (camAspectDistScale) still multiplies the converted
+       distance, exactly as it multiplied the raw setting. */
+    function camDistWorld(){
+      var km = isFinite(state.camDist) ? state.camDist : 11;
+      if (typeof localFrame !== 'undefined' && localFrame && localFrame.K) return km * localFrame.K / 111.32;
+      return km * 2.25;   /* no frame yet: the SAMPLE-scale equivalent (K ~ 250) */
+    }
+    /* Camera Distance slider <-> chart span linkage. The slider
+       is in chart kilometres, but its RANGE and STEP scale with
+       the chart span: min = 1% of the span, max = the whole span,
+       step = 0.5% of the span (about 200 steps across the range
+       on any flight). On the SAMPLE (span 102 km) that reproduces
+       the historical 1-100 km / step 1 range; on a
+       transcontinental flight (span ~4,000 km) the range becomes
+       ~40-4,000 km with a ~20 km step, so a slider move changes
+       the framing by the same fraction of the chart as on a
+       short flight. (With the fixed 1-100 km range the whole
+       slider covered under 3% of a transcontinental chart, and
+       moving it changed almost nothing — the reported bug.)
+       When the span CHANGES (a different file loads), the
+       setting itself is rescaled by the same ratio, so the
+       slider keeps its position and the camera keeps the same
+       framing relative to the chart; the world distance
+       (km * K / 111.32) then lands in the same band on every
+       flight, which is also what every distance-linked camera
+       behaviour is calibrated against — the correction step
+       caps (multiples of ctx.dist), the holds' release pace
+       (distReleaseSec below) and the pitch geometry
+       (ctx.back / ctx.hgt = dist * cos / sin(pitch)): pitch is
+       an angle and needs no range change of its own, but its
+       world-space effect is dist * sin(pitch), so it only
+       scales correctly once the distance does. FOV and Orbit
+       Speed are angles / angle rates and Follow Smoothness is
+       wall-clock time constants — none of them carries a world
+       length, so their ranges are span-independent already;
+       their USES of distance (step caps, arc radius ctx.dist)
+       are all relative to ctx.dist and inherit this linkage.
+       Called from computeLocalFrame. */
+    var lastSpanKm = 0;
+    function syncCamDistRange(spanKm){
+      var el = document.getElementById('camDist');
+      if (!el || !(spanKm > 0)) return;
+      var prev = lastSpanKm;
+      lastSpanKm = spanKm;
+      if (prev > 0 && Math.abs(spanKm - prev) > 0.01 && isFinite(state.camDist))
+        state.camDist = state.camDist * spanKm / prev;
+      var min = Math.max(0.1, spanKm * 0.01);
+      var max = Math.max(min + 1, spanKm);
+      el.min = String(Math.round(min * 100) / 100);
+      el.max = String(Math.round(max * 100) / 100);
+      el.step = String(Math.max(0.05, Math.round(spanKm * 0.005 * 100) / 100));
+      var v = isFinite(state.camDist) ? state.camDist : 11;
+      v = Math.max(min, Math.min(max, v));
+      state.camDist = v;
+      el.value = String(v);
+      var lab = document.getElementById('camDistVal');
+      if (lab) lab.textContent = Math.round(v) + ' km';
+    }
+    /* Release pace for the correction holds
+       (holdCorrectionChannels / holdPanChannel), from a WORLD
+       distance: the pace follows the distance's FRACTION OF THE
+       FRAME — the historical calibration "0.18 s at 10 world,
+       1.2 s at 120 world" was a fraction of the 230-unit frame
+       (4.3% to 52%), so it is computed from the fraction, not
+       the raw world value. Written in raw world units (as it
+       was), the pace pinned at its floor whenever the km-to-
+       world conversion shrank on a long flight; this form keeps
+       the linkage explicit and correct whatever the frame size,
+       and the span-linked Camera Distance above keeps the
+       setting's world value inside the calibrated band. */
+    function distReleaseSec(distWorld){
+      var size = (typeof localFrame !== 'undefined' && localFrame && localFrame.size) ? localFrame.size : 230;
+      var f = (distWorld / size - 10 / 230) / (110 / 230);
+      f = Math.max(0, Math.min(1, f));
+      return 0.18 + f * 1.02;
+    }
+    /* Real metres on the local chart -> world units, via the
+       same frame scale (111,320 m per degree). Sizes measured
+       on the map (aircraft, trail, full route) are fixed in
+       metres through this, so they read the same against the
+       chart whatever the flight's span. */
+    function metersToWorldLocal(m){
+      if (typeof localFrame !== 'undefined' && localFrame && localFrame.K) return m * localFrame.K / 111320;
+      return m * 0.00225;
     }
     /* Portrait also chases a little faster: even with the framing
        compensated, the frame is physically narrower on screen, so
@@ -8216,8 +8310,25 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
        sliders rebuild the tube radius; the trail shows only a slice of
        the tube via an index draw range (see applyPhase). */
     var TUBE_RADIAL = 6;
-    function trailRadiusWorld(){ return state.trailWidth * 0.055; }
-    function fullRadiusWorld(){ return state.fullRouteWidth * 0.04; }
+    /* On the local chart the tube radii are fixed in REAL
+       METRES ON THE MAP: trail radius = Trail Thickness x 24 m,
+       full-route radius = Full Route Thickness x 18 m, at any
+       flight span (~120 m trail radius and ~36 m full-route
+       radius at the default sliders 5 / 2.0). Before, the radii
+       were raw world units, so measured against the chart they
+       grew with the flight's span. The globe has no chart
+       scale, so its tubes keep the historic world sizes. */
+    function trailRadiusWorld(isLocal){
+      return isLocal ? metersToWorldLocal(state.trailWidth * 24) : state.trailWidth * 0.055;
+    }
+    function fullRadiusWorld(isLocal){
+      return isLocal ? metersToWorldLocal(state.fullRouteWidth * 18) : state.fullRouteWidth * 0.04;
+    }
+    /* The aircraft marker's length on the local chart, in real
+       metres (the cone geometry is 0.92 world units long; the
+       route visual scales it so its chart length is this, at
+       any span — ~325 m is what the SAMPLE has always shown). */
+    var PLANE_LEN_M = 325;
     function buildTubeGeometry(centers, radius){
       var N = centers.length, RAD = TUBE_RADIAL;
       var pos = new Float32Array(N * RAD * 3);
@@ -8271,7 +8382,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
     function tubeRangeStart(startIdx){ return startIdx * TUBE_RADIAL * 6; }
     function tubeRangeCount(startIdx, headIdx){ return Math.max(0, headIdx - startIdx) * TUBE_RADIAL * 6; }
 
-    function makeRouteVisual(fl, projectFn, labelScale){
+    function makeRouteVisual(fl, projectFn, labelScale, isLocal){
       /* projectFn(sample) -> THREE.Vector3 */
       var group = new THREE.Group();
       var centers = [];
@@ -8279,28 +8390,35 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
         centers.push(projectFn(s));
       });
       var fullLine = new THREE.Mesh(
-        buildTubeGeometry(centers, fullRadiusWorld()),
+        buildTubeGeometry(centers, fullRadiusWorld(isLocal)),
         new THREE.MeshBasicMaterial({ color:new THREE.Color(state.fullRouteColor), transparent:true, opacity: state.showRoute ? state.fullRouteOpacity : 0, depthWrite:false })
       );
       fullLine.visible = !!state.showRoute;
       fullLine.frustumCulled = false;
       group.add(fullLine);
       var trailLine = new THREE.Mesh(
-        buildTubeGeometry(centers, trailRadiusWorld()),
+        buildTubeGeometry(centers, trailRadiusWorld(isLocal)),
         new THREE.MeshBasicMaterial({ color:new THREE.Color(fl.colorCss), transparent:false, opacity:1 })
       );
       trailLine.frustumCulled = false;
       group.add(trailLine);
       var endpoints = []; /* start/end markers removed */
       var plane = makePlane(fl.colorCss);
-      if (labelScale) plane.scale.setScalar(labelScale);
-      plane.userData.baseScale = labelScale || 1;
+      /* Local chart: the marker's size is fixed in metres on
+         the map (PLANE_LEN_M long), so its scale comes from the
+         frame, not from the labelScale argument. Globe: the
+         historic fixed scale. Either way the scale is CONSTANT
+         — the render loop no longer grows it with camera
+         distance. */
+      var planeScale = isLocal ? (metersToWorldLocal(PLANE_LEN_M) / 0.92) : (labelScale || 1);
+      plane.scale.setScalar(planeScale);
+      plane.userData.baseScale = planeScale;
       group.add(plane);
       var labelText = (fl.samples[0] && fl.samples[0].cs) ? fl.samples[0].cs : fl.name;
       if (labelText.length > 22) labelText = labelText.slice(0, 21) + '…';
       var label = makeLabelSprite(labelText, fl.colorCss);
       group.add(label);
-      return { group:group, fullLine:fullLine, trailLine:trailLine, plane:plane, label:label, labelText:labelText, endpoints:endpoints, _centers:centers };
+      return { group:group, fullLine:fullLine, trailLine:trailLine, plane:plane, label:label, labelText:labelText, endpoints:endpoints, _centers:centers, isLocal:!!isLocal };
     }
 
     function replaceLabel(vis, fl, text){
@@ -8326,7 +8444,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
     function applyTrailWidth(){
       flights.forEach(function(fl){
         [fl.globeVis, fl.localVis].forEach(function(vis){
-          if (vis && vis.trailLine && vis._centers) rebuildTubeMesh(vis.trailLine, vis._centers, trailRadiusWorld());
+          if (vis && vis.trailLine && vis._centers) rebuildTubeMesh(vis.trailLine, vis._centers, trailRadiusWorld(vis.isLocal));
         });
       });
     }
@@ -8334,7 +8452,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       flights.forEach(function(fl){
         [fl.globeVis, fl.localVis].forEach(function(vis){
           if (!vis || !vis.fullLine) return;
-          if (vis._centers) rebuildTubeMesh(vis.fullLine, vis._centers, fullRadiusWorld());
+          if (vis._centers) rebuildTubeMesh(vis.fullLine, vis._centers, fullRadiusWorld(vis.isLocal));
           vis.fullLine.visible = !!state.showRoute;
           vis.fullLine.material.transparent = true;
           vis.fullLine.material.opacity = state.showRoute ? state.fullRouteOpacity : 0;
@@ -8410,14 +8528,25 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       var cosLat = Math.cos(b.lat0 * Math.PI/180);
       var spanDeg = Math.max(b.dLat, b.dLon * cosLat, 0.02);
       var K = 230 / spanDeg;
-      var yScale = (maxAltOf(vis) > 0) ? (34 / maxAltOf(vis)) : 0.01;
+      /* True geographic scale: horizontally, one degree of
+         latitude spans K world units (see localProject), and one
+         degree of latitude is 111.32 km = 365,229 ft — so at
+         Altitude Exaggeration x1.0, one foot of altitude spans
+         K / 365229 world units and a vertical metre is exactly
+         as long as a horizontal metre in the 3D space.
+         state.altScale is a plain multiplier on that true scale
+         (the x0.5 default is half true height). Previously
+         yScale instead mapped the flights' own maximum altitude
+         to a fixed 34 world units, so "x1.0" was an arbitrary
+         stretch that changed with the data and was never the
+         true scale. */
+      var yScale = K / 365229;
       localFrame = { lat0:b.lat0, lon0:b.lon0, cosLat:cosLat, K:K, yScale:yScale,
                      size: spanDeg * K, bounds:b };
-    }
-    function maxAltOf(list){
-      var m = 0;
-      list.forEach(function(fl){ if (fl.maxAlt > m) m = fl.maxAlt; });
-      return m;
+      /* The Camera Distance slider's range / step (and, on a
+         span change, the setting itself) follow the chart span —
+         see syncCamDistRange. */
+      syncCamDistRange(spanDeg * 111.32);
     }
     function localProject(s){
       var f = localFrame;
@@ -8497,15 +8626,30 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
         y1: Math.min(maxT, Math.floor(latToPx(bounds.minLat, z) / 256))
       };
     }
-    function buildMosaic(bounds, layer){
+    function paddedBounds(bounds){
       var cosC = Math.cos(((bounds.minLat + bounds.maxLat) / 2) * Math.PI / 180);
       var padLat = Math.max(0.02, bounds.dLat * 0.18, 50 / 111.32);
       var padLon = Math.max(0.02, bounds.dLon * 0.18, 50 / (111.32 * Math.max(0.2, cosC)));
-      var pb = {
+      return {
         minLat: Math.max(-85, bounds.minLat - padLat), maxLat: Math.min(85, bounds.maxLat + padLat),
         minLon: Math.max(-180, bounds.minLon - padLon), maxLon: Math.min(180, bounds.maxLon + padLon),
         dLat: bounds.dLat, dLon: bounds.dLon
       };
+    }
+    function layerZooms(layer){
+      return { zMax: layer === 'ifr' ? 11 : (layer === 'map' ? 14 : 12),
+               zMin: layer === 'ifr' ? 7 : 8 };
+    }
+    function phoneClassScreen(){
+      return Math.min(window.innerWidth || 9999, window.innerHeight || 9999) <= 720;
+    }
+    /* Pick a zoom for the padded bounds and build the mosaic over the
+       whole rectangle. The zoom steps down from the layer's cap
+       until the tile range fits 24 tiles per side. opts is forwarded
+       to buildMosaicRange (only noEdgeFade is ever passed). */
+    function buildMosaic(bounds, layer, opts){
+      opts = opts || {};
+      var pb = paddedBounds(bounds);
       /* The mosaic is built at the chart's OWN native zoom: tiles are
          drawn 1:1 into the canvas and never upscaled from a lower zoom.
          (Previously the chart was fetched at a low "reference" zoom and
@@ -8518,13 +8662,24 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
          second line of defense. The street-map layer (OpenStreetMap)
          is served up to z19 and is capped at z14 so street names stay
          legible under the follow cameras. */
-      var zMax = layer === 'ifr' ? 11 : (layer === 'map' ? 14 : 12);
-      var zMin = layer === 'ifr' ? 7 : 8;
+      var zz = layerZooms(layer);
+      var zMax = zz.zMax;
+      var zMin = zz.zMin;
+      var maxSide = 24;
       var zc = zMax;
       var chartRange = tileRange(pb, zc);
-      while (zc > zMin && ((chartRange.x1 - chartRange.x0 + 1) > 24 || (chartRange.y1 - chartRange.y0 + 1) > 24)){
+      while (zc > zMin && ((chartRange.x1 - chartRange.x0 + 1) > maxSide || (chartRange.y1 - chartRange.y0 + 1) > maxSide)){
         zc--; chartRange = tileRange(pb, zc);
       }
+      return buildMosaicRange(chartRange, zc, layer, opts);
+    }
+    /* Build one mosaic canvas over an explicit tile range at an
+       explicit zoom. The canvas pixel budget is 30M px (12M on
+       phone-class screens) and the supersample cap is 1.75x.
+       opts.noEdgeFade skips the rectangular edge fade entirely
+       (used for the Map layer's mosaic). */
+    function buildMosaicRange(chartRange, zc, layer, opts){
+      opts = opts || {};
       var W = (chartRange.x1 - chartRange.x0 + 1) * 256;
       var H = (chartRange.y1 - chartRange.y0 + 1) * 256;
       var ox = chartRange.x0 * 256, oy = chartRange.y0 * 256;
@@ -8548,7 +8703,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
          so all-new mosaics) looked like. 12M px is still ~3.5k
          px on a side, far beyond a phone's 1080x1920 recording
          frame, so chart text stays legible there. */
-      var pxBudget = (Math.min(window.innerWidth || 9999, window.innerHeight || 9999) <= 720) ? 12000000 : 30000000;
+      var pxBudget = phoneClassScreen() ? 12000000 : 30000000;
       var scale = Math.min(1.75, 8192 / Math.max(W, H), Math.sqrt(pxBudget / (W * H)));
       if (!(scale > 0) || !isFinite(scale)) scale = 1;
       canvas.width = Math.round(W * scale); canvas.height = Math.round(H * scale);
@@ -8613,7 +8768,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
            color every frame) finishes the blend in 3D, and because the
            fade is baked into the WebGL texture it is identical in
            recorded video. */
-        (function fadeMosaicEdges(){
+        if (!opts.noEdgeFade) (function fadeMosaicEdges(){
           var wpx = canvas.width, hpx = canvas.height;
           var fx = Math.max(8, Math.round(wpx * 0.26)), fy = Math.max(8, Math.round(hpx * 0.26));
           var g2 = canvas.getContext('2d');
@@ -8646,11 +8801,65 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
         };
       });
     }
+    /* ---------------- Chart set: the single mosaic ----------------
+       A chart "set" is what gets placed on the ground: one mosaic
+       canvas over the whole padded rectangle that bounds the
+       track, built at ONE zoom by buildMosaic — the highest
+       served zoom whose tile range fits the tile cap, with the
+       canvas kept inside the pixel budget (see buildMosaic /
+       buildMosaicRange). The whole track area is drawn once, at
+       one resolution, and never changes during playback. On a
+       wide flight area that single zoom is necessarily low —
+       that is the accepted trade-off of this algorithm. */
+    function disposeChartSet(res){
+      if (res && res.texture) res.texture.dispose();
+    }
+    /* Build the chart set for a layer: the single mosaic over the
+       whole track bounds (see the section comment above). The Map
+       layer's mosaic is built with NO edge fade: the baked
+       rectangular fade read as a circular fade on the plain street
+       map. The FAA chart layers keep their classic rectangular
+       edge fade. */
+    function buildChartSet(bounds, layer){
+      return buildMosaic(bounds, layer, layer === 'map' ? { noEdgeFade: true } : undefined);
+    }
     var mosaicCache = {};
     var mosaicPending = {};
+    var chartNearKeyApplied = '';   /* the chartNearKey the cached / building sets are stamped for */
+    /* Which chart set exists depends ONLY on the trajectory
+       data (which flights are on the timeline, and the local
+       frame they project into) — never on the camera — so the
+       cache key is exactly the camera paths' DATA signature.
+       Camera Distance / Pitch / lens / Orbit Speed / aspect
+       changes therefore never rebuild the chart; only a data
+       change does. */
+    function chartNearKey(){
+      return camPathDataSignature();
+    }
     function mosaicKeyFor(layer){
       var b = localFrame.bounds;
-      return layer + '|' + b.minLat.toFixed(2) + ',' + b.maxLat.toFixed(2) + ',' + b.minLon.toFixed(2) + ',' + b.maxLon.toFixed(2);
+      return layer + '|' + b.minLat.toFixed(2) + ',' + b.maxLat.toFixed(2) + ',' + b.minLon.toFixed(2) + ',' + b.maxLon.toFixed(2) + '|' + chartNearKey();
+    }
+    /* Called whenever a new set of camera trajectories becomes
+       ACTIVE (the first build, a background swap at a safe
+       moment, a Play-press recalculation). Set creation follows
+       only the trajectory DATA (see chartNearKey), so this fires
+       a chart rebuild only when the data itself changed: drop the
+       cached sets and rebuild the visible layer's set in the
+       background — the chart on screen stays up until its
+       replacement is ready. Camera-setting changes leave the key
+       untouched, so they never rebuild the chart. */
+    function noteCamPathsActivated(){
+      var nk = chartNearKey();
+      if (nk === chartNearKeyApplied) return;
+      chartNearKeyApplied = nk;
+      if (!localFrame || !activeChartMesh) return;
+      Object.keys(mosaicCache).forEach(function(k){
+        disposeChartSet(mosaicCache[k]);
+        delete mosaicCache[k];
+      });
+      loadMosaicInto(state.mapLayer, activeChartMesh);
+      preloadChartLayers();
     }
     /* Load (or reuse) the mosaic for a layer WITHOUT touching the
        screen. Concurrent requests for the same layer share one
@@ -8661,18 +8870,19 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       var key = mosaicKeyFor(layer);
       if (mosaicCache[key]) return Promise.resolve(mosaicCache[key]);
       if (mosaicPending[key]) return mosaicPending[key];
-      var p = buildMosaic(localFrame.bounds, layer).then(function(res){
+      chartNearKeyApplied = chartNearKey();   /* the set built below is stamped for this key */
+      var p = buildChartSet(localFrame.bounds, layer).then(function(res){
         delete mosaicPending[key];
-        /* If the flight area changed while this mosaic was being
+        /* If the flight area changed while this chart set was being
            built, its bounds are already stale: do not cache it
            (the sweep in rebuildLocalWorld would only have to free
-           it again) — release the texture now and let the caller
+           it again) — release its textures now and let the caller
            ignore the result via its mesh / layer guards. A
            disposed CanvasTexture can still be re-uploaded from
            its canvas if a guard race ever places it, so this is
            safe. */
         if (localFrame && mosaicKeyFor(layer) !== key){
-          if (res && res.texture) res.texture.dispose();
+          disposeChartSet(res);
           return res;
         }
         mosaicCache[key] = res;
@@ -8721,8 +8931,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       var suffix = mosaicKeyFor(state.mapLayer).slice(state.mapLayer.length);
       Object.keys(mosaicCache).forEach(function(key){
         if (key.slice(key.indexOf('|')) !== suffix){
-          var res = mosaicCache[key];
-          if (res && res.texture) res.texture.dispose();
+          disposeChartSet(mosaicCache[key]);
           delete mosaicCache[key];
         }
       });
@@ -8746,11 +8955,16 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       document.getElementById('creditText').textContent = info.credit;
       setLayerStatus(info.status);
     }
-    /* Shared uniform: 1 / mosaic texture size in pixels, used by the
-       chart material's sharpening shader. placeChart updates it for
-       every mosaic that gets placed. */
+    /* Fallback uniform: 1 / mosaic texture size in pixels, used by
+       the chart material's sharpening shader. placeChart passes
+       the mosaic's own texel uniform, so this default only serves
+       a material created before its texture is known. */
     var chartTexel = { value: new THREE.Vector2(1 / 4096, 1 / 4096) };
-    function makeChartMaterial(){
+    /* The chart's alpha is exactly its texture's alpha — the
+       single mosaic's only fade is the one baked into its own
+       canvas edges (the Map layer's mosaic is built without
+       even that). */
+    function makeChartMaterial(texel){
       var mat = new THREE.MeshBasicMaterial({ color: 0x0d1a29, transparent: true });
       /* The chart is print artwork: tone mapping dulls its inks and
          lowers text contrast, so render it as authored. */
@@ -8763,7 +8977,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
          untouched. Falls back to plain sampling if the shader chunk
          is not found. */
       mat.onBeforeCompile = function(shader){
-        shader.uniforms.uChartTexel = chartTexel;
+        shader.uniforms.uChartTexel = texel || chartTexel;
         var frag = shader.fragmentShader;
         var chunk = '#include <map_fragment>';
         if (frag.indexOf(chunk) < 0) return;
@@ -8783,49 +8997,73 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
         ].join('\n');
         shader.fragmentShader = ('uniform vec2 uChartTexel;\n' + frag).replace(chunk, custom);
       };
-      mat.customProgramCacheKey = function(){ return 'chart-sharp-v1'; };
+      mat.customProgramCacheKey = function(){ return 'chart-sharp-v3'; };
       return mat;
     }
-    function placeChart(res, mesh, mat){
+    /* Place the chart set into the chart holder group: the set
+       is the single mosaic (see buildChartSet), so this places
+       its one plane, with its own chart material (its own
+       texture and sharpening texel), at the base height just
+       above the ground plane. No fade is applied here — the
+       chart shows exactly where its tiles are (the FAA layers'
+       only fade is the one baked into the mosaic canvas edges).
+       The texture belongs to the mosaic cache — only the
+       per-placement material is disposed here. */
+    var chartPlaneGeo = null;
+    function placeChart(res, holder){
       if (!res || !localFrame) return;
-      if (res.texW && res.texH) chartTexel.value.set(1 / res.texW, 1 / res.texH);
       var f = localFrame;
-      var w = (res.east - res.west) * f.cosLat * f.K;
-      var d = (res.north - res.south) * f.K;
-      mesh.scale.set(Math.max(1, w), Math.max(1, d), 1);
-      mesh.position.x = ((res.west + res.east) / 2 - f.lon0) * f.cosLat * f.K;
-      mesh.position.z = -(((res.north + res.south) / 2) - f.lat0) * f.K;
-      mesh.visible = true;
+      while (holder.children.length){
+        var old = holder.children[0];
+        holder.remove(old);
+        if (old.material) old.material.dispose();
+      }
+      if (!chartPlaneGeo) chartPlaneGeo = new THREE.PlaneGeometry(1, 1);
+      var texel = (res.texW && res.texH) ? { value: new THREE.Vector2(1 / res.texW, 1 / res.texH) } : null;
+      var w = Math.max(1, (res.east - res.west) * f.cosLat * f.K);
+      var d = Math.max(1, (res.north - res.south) * f.K);
+      var px = ((res.west + res.east) / 2 - f.lon0) * f.cosLat * f.K;
+      var pz = -(((res.north + res.south) / 2) - f.lat0) * f.K;
+      var mat = makeChartMaterial(texel);
       mat.map = res.texture; mat.color.set(0xffffff); mat.needsUpdate = true;
+      var mesh = new THREE.Mesh(chartPlaneGeo, mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.scale.set(w, d, 1);
+      mesh.position.x = px;
+      mesh.position.y = -0.20;
+      mesh.position.z = pz;
+      holder.add(mesh);
+      holder.visible = true;
       if (localGround){
+        var w = (res.east - res.west) * f.cosLat * f.K;
+        var d = (res.north - res.south) * f.K;
         var cover = Math.max(f.size * 1.35, w * 1.3, d * 1.3);
         localGround.scale.set(cover, cover, 1);
-        if (localGrid) localGrid.scale.set(cover / (f.size * 1.35), 1, cover / (f.size * 1.35));
       }
     }
     /* Load a layer's mosaic in the background and swap it onto the
        given chart mesh when ready — unless the layer or the mesh has
        moved on by then. Shared by applyMosaic and setMapLayer. */
-    function loadMosaicInto(layer, mesh, mat){
+    function loadMosaicInto(layer, holder){
       ensureMosaic(layer).then(function(res){
-        if (state.mapLayer !== layer || mesh !== activeChartMesh) return;
-        placeChart(res, mesh, mat);
+        if (state.mapLayer !== layer || holder !== activeChartMesh) return;
+        placeChart(res, holder);
         chartStatusFor(res, layer);
         preloadChartLayers();
       }).catch(function(){
         if (state.mapLayer === layer) setLayerStatus('Could not load map tiles (offline?)');
       });
     }
-    function applyMosaic(mesh, mat){
+    function applyMosaic(holder){
       var layer = state.mapLayer;
       var key = mosaicKeyFor(layer);
-      if (mosaicCache[key]){ placeChart(mosaicCache[key], mesh, mat); preloadChartLayers(); return; }
+      if (mosaicCache[key]){ placeChart(mosaicCache[key], holder); preloadChartLayers(); return; }
       /* Not built yet: the mesh stays hidden only on this very first
          load (there is no previous chart to keep). Once ANY chart is
          on screen, later switches go through setMapLayer, which keeps
          the old chart visible until the new one is ready. */
       setLayerStatus('Loading map tiles...');
-      loadMosaicInto(layer, mesh, mat);
+      loadMosaicInto(layer, holder);
     }
 
     function setMapLayer(layer, silent){
@@ -8839,7 +9077,6 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
            (preloadChartLayers), so in practice the swap is
            immediate; the keep-old-chart path is the safety net for
            a switch requested before the preload finished. */
-      if (activeChartMat) activeChartMat.opacity = 1;
       var changed = layer !== state.mapLayer;
       state.mapLayer = layer;
       Array.prototype.forEach.call(document.querySelectorAll('#layerSeg button'), function(b){
@@ -8847,15 +9084,15 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       });
       updateCredit();
       if (!localFrame){ return; }
-      if (!activeChartMesh || !activeChartMat){ rebuildLocalWorld(); return; }
-      var mesh = activeChartMesh, mat = activeChartMat;
+      if (!activeChartMesh){ rebuildLocalWorld(); return; }
+      var holder = activeChartMesh;
       var key = mosaicKeyFor(layer);
       if (mosaicCache[key]){
-        placeChart(mosaicCache[key], mesh, mat);
+        placeChart(mosaicCache[key], holder);
         chartStatusFor(mosaicCache[key], layer);
       } else {
         setLayerStatus('Loading map tiles...');
-        loadMosaicInto(layer, mesh, mat);
+        loadMosaicInto(layer, holder);
       }
       if (changed && !silent) toast('Map layer: ' + LAYER_INFO[layer].status.replace('Map: ', ''));
     }
@@ -8881,19 +9118,16 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       localGround = ground; localGroundMat = ground.material;
       ground.rotation.x = -Math.PI/2; ground.position.y = -0.4;
       localGroup.add(ground);
-      /* chart mosaic plane (real map tiles as the ground texture) */
-      var chartMat = makeChartMaterial();
-      activeChartMat = chartMat;
-      var chartMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), chartMat);
-      chartMesh.rotation.x = -Math.PI/2; chartMesh.position.y = -0.18; chartMesh.visible = false;
-      activeChartMesh = chartMesh;
-      localGroup.add(chartMesh);
-      applyMosaic(chartMesh, chartMat);
-      var grid = new THREE.GridHelper(size, 14, 0x2b6a8a, 0x16384a);
-      localGrid = grid;
-      grid.position.y = -0.06;
-      grid.material.transparent = true; grid.material.opacity = 0.35;
-      localGroup.add(grid);
+      /* chart holder (real map tiles as the ground texture): a
+         group whose child placeChart fills with the single
+         mosaic's one plane. Starts hidden; the first placement
+         shows it, and later layer switches keep the old plane up
+         until the replacement mosaic is placed in one go. */
+      var chartGroup = new THREE.Group();
+      chartGroup.visible = false;
+      activeChartMesh = chartGroup;
+      localGroup.add(chartGroup);
+      applyMosaic(chartGroup);
       /* north marker */
       var nLabel = makeLabelSprite('N ↑', '#7dd3fc');
       nLabel.scale.multiplyScalar(0.8);
@@ -8901,7 +9135,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       localGroup.add(nLabel);
       flights.forEach(function(fl){
         if (!fl.visible) return;
-        fl.localVis = makeRouteVisual(fl, localProject, 0.8);
+        fl.localVis = makeRouteVisual(fl, localProject, 0.8, true);
         localGroup.add(fl.localVis.group);
       });
       applyFullRouteVisibility();
@@ -9543,8 +9777,8 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
             each edge at NDC ±0.9, bottom to the frame edge,
             top at NDC +0.6 under the HUD); and
             the camera PITCH — the view's depression angle, 0°
-            looking level to 30° looking down — sits within
-            0–30°. A home breaking either is rejected.
+            looking level to 25° looking down — sits within
+            0–25°. A home breaking either is rejected.
          1. Minimise the MEAN camera–aircraft distance along
             the trajectory — the top priority: on average as
             close to the aircraft as possible, not the far
@@ -9591,7 +9825,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
        aim points — the trajectory centroid (where the aircraft
        spends its time) and the route bounds centre at the mean
        flight altitude — × elevations 20°–72.5° in 7.5° steps
-       (elevations above 30° are skipped unread: a grid
+       (elevations above 25° are skipped unread: a grid
        candidate's pitch is its elevation, so the pitch hard
        constraint already rejects them).
        For each, the smallest statically fitting distance is
@@ -9648,7 +9882,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       function grade(cand){
         /* HARD CONSTRAINT — the camera pitch (the view's
            depression angle: 0° = looking level, positive =
-           looking down) must sit within 0–30°. A candidate
+           looking down) must sit within 0–25°. A candidate
            outside it is rejected outright, exactly like a
            candidate whose trajectory breaks the in-frame
            constraint below. Computed from the candidate's own
@@ -9656,7 +9890,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
            pose included. */
         var pitchDeg = Math.atan2(cand.pos[1] - cand.look[1],
           Math.hypot(cand.pos[0] - cand.look[0], cand.pos[2] - cand.look[2])) * 180 / Math.PI;
-        if (!(pitchDeg >= 0 && pitchDeg <= 30)) return null;
+        if (!(pitchDeg >= 0 && pitchDeg <= 25)) return null;
         var savedPos = [manualCam.pos.x, manualCam.pos.y, manualCam.pos.z];
         var savedLook = [manualCam.look.x, manualCam.look.y, manualCam.look.z];
         var savedInit = manualCam.init;
@@ -9739,10 +9973,10 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
             var c = centers[Math.floor(combo / elevs.length)], e = elevs[combo % elevs.length];
             combo++;
             /* A grid candidate's pitch IS its elevation, so
-               elevations above 30° are rejected by the pitch
+               elevations above 25° are rejected by the pitch
                hard constraint (see grade) without spending a
                fit on them. */
-            if (e > 30) return false;
+            if (e > 25) return false;
             var rad = e * Math.PI / 180, sinE = Math.sin(rad), cosE = Math.cos(rad);
             var D = 24;
             while (D <= 6000 && !fitsAll(c[0], c[1], c[2], D, sinE, cosE)) D *= 1.07;
@@ -9772,7 +10006,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
           /* The stage-1 winner is the fallback — but the pitch
              hard constraint still applies to it: take the first
              statically fitting home (best static mean distance
-             first) whose pitch sits within 0–30°, and only when
+             first) whose pitch sits within 0–25°, and only when
              no home qualifies at all (no grid home fit) fall
              back to the unconstrained winner as before. */
           var fb = null;
@@ -9780,7 +10014,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
             var fc = cands[fi];
             var fp = Math.atan2(fc.pos[1] - fc.look[1],
               Math.hypot(fc.pos[0] - fc.look[0], fc.pos[2] - fc.look[2])) * 180 / Math.PI;
-            if (fp >= 0 && fp <= 30){ fb = fc; break; }
+            if (fp >= 0 && fp <= 25){ fb = fc; break; }
           }
           if (!fb) fb = cands[0];
           job.result = { pos: fb.pos, look: fb.look };
@@ -10261,6 +10495,17 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       document.getElementById('trailWidthVal').textContent = state.trailWidth.toFixed(1);
       applyTrailWidth();
     });
+    /* Startup sync: the shown default must be state.trailWidth
+       (5), whatever the control itself was left holding. Browsers
+       restore form control values across sessions / navigation
+       without firing 'input', so a slider last touched under the
+       old 2.5 default could sit at 2.5 on screen while the state
+       already said 5 — write the state default into the control
+       and its readout once, here at startup. */
+    if (trailWidthEl){
+      trailWidthEl.value = String(state.trailWidth);
+      document.getElementById('trailWidthVal').textContent = state.trailWidth.toFixed(1);
+    }
     (function bindGlobalColor(){
       var pick = document.getElementById('globalColor');
       if (pick) pick.addEventListener('input', function(){ setAllFlightColor(pick.value); });
@@ -10771,7 +11016,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
         apply(v);
       });
     }
-    bindCamSlider('camDist', 'camDistVal', function(v){ return String(Math.round(v)); }, function(v){ state.camDist = v; });
+    bindCamSlider('camDist', 'camDistVal', function(v){ return Math.round(v) + ' km'; }, function(v){ state.camDist = v; });
     bindCamSlider('camPitch', 'camPitchVal', function(v){ return Math.round(v) + '°'; }, function(v){ state.camPitch = v; });
     bindCamSlider('camFov', 'camFovVal', function(v){ return Math.round(v) + '°'; }, function(v){
       state.camFov = v; if (camera){ camera.fov = effectiveCamFovDeg(); camera.updateProjectionMatrix(); }
@@ -11323,8 +11568,8 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
         return;
       }
       /* Recording Resolution: freeze the selected size for this
-         recording and — unless it is "Display Size" (the default:
-         the canvas keeps exactly its current size) — raise the
+         recording and — unless it is "Display Size" (the canvas
+         keeps exactly its current size) — raise the
          drawing buffer to it NOW, before the HUD overlay is built
          and the stream is captured, so both match the recorded
          size. The on-screen stage size does not change. The
@@ -11807,7 +12052,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
         try { built = buildCamPaths(); } catch (e){ built = null; }
         if (!built){ camPathFailedSig = sig; return; } /* the active paths (or the fallback rig) carry on */
         if (camPathSig === sig) return;                /* became active meanwhile */
-        if (!camPaths.follow){ camPaths.follow = built.follow; camPaths.orbit = built.orbit; camPaths.topdown = built.topdown; camPaths.overview = built.overview; camPathSig = sig; camPathBuiltDataSig = camPathDataSignature(); camPathActiveManualPart = manualViewSigPart(); if (state.camMode === 'overview') ovHoldManual = false; if (ovAutoApplySig && ovAutoApplySig === sig){ ovAutoApplySig = ''; toastCamPathApplied(true); } }
+        if (!camPaths.follow){ camPaths.follow = built.follow; camPaths.orbit = built.orbit; camPaths.topdown = built.topdown; camPaths.overview = built.overview; camPathSig = sig; camPathBuiltDataSig = camPathDataSignature(); camPathActiveManualPart = manualViewSigPart(); if (state.camMode === 'overview') ovHoldManual = false; if (ovAutoApplySig && ovAutoApplySig === sig){ ovAutoApplySig = ''; toastCamPathApplied(true); } noteCamPathsActivated(); }
         else { camPathsNext = built; camPathNextSig = sig; }
       };
       if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 400 });
@@ -11891,6 +12136,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
              the build callback above and stays silent. */
           var aaSwap = camPathAutoApplied; camPathAutoApplied = false;
           toastCamPathApplied(aaSwap);
+          noteCamPathsActivated();
         }
       }
       camSeekSnap = false;
@@ -12023,6 +12269,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
          toast is the user's signal that the re-optimization
          ran. */
       toastCamPathApplied(autoApplied);
+      noteCamPathsActivated();
     }
     /* Sliding-window box blur of one component of an interleaved
        xyz array — O(n) at any radius (prefix sums). */
@@ -13628,13 +13875,13 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
          which is exempt from the hold entirely (see the loop). */
       var holdSec = 0.8 + smoothSpreadSec() * 3.2;
       var W = Math.max(0, Math.round(holdSec * state.speed / CAM_PATH_DT));
-      /* Release time constant from the camera distance (clamped
-         to 10–120): the Distance SETTING for the tracking modes,
-         the user's manual distance to the look point for
-         Overview (passed as relDist). Linear from 0.18 s
-         (closest) to 1.2 s (widest) of wall time. */
-      var distSet = Math.max(10, Math.min(120, (relDist != null && isFinite(relDist)) ? relDist : (state.camDist || 60)));
-      var relSec = 0.18 + (distSet - 10) / 110 * 1.02;
+      /* Release time constant from the camera distance: the
+         Distance SETTING for the tracking modes, the user's
+         manual distance to the look point for Overview (passed
+         as relDist). The pace follows the distance's fraction
+         of the frame (see distReleaseSec): 0.18 s at the
+         closest compositions to 1.2 s at the widest. */
+      var relSec = distReleaseSec((relDist != null && isFinite(relDist)) ? relDist : camDistWorld());
       var relStep = Math.exp(-(CAM_PATH_DT / Math.max(0.25, state.speed)) / relSec);
       var changed = false;
       var chans = [dolly, zoom];
@@ -13844,11 +14091,11 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       var holdSec = 0.8 + smoothSpreadSec() * 3.2;
       var W = Math.max(0, Math.round(holdSec * state.speed / CAM_PATH_DT));
       /* Release constant from the camera distance, exactly as
-         in holdCorrectionChannels: the Distance SETTING for the
-         tracking modes, the user's manual distance to the look
-         point for Overview (passed as relDist). */
-      var distSet = Math.max(10, Math.min(120, (relDist != null && isFinite(relDist)) ? relDist : (state.camDist || 60)));
-      var relSec = 0.18 + (distSet - 10) / 110 * 1.02;
+         in holdCorrectionChannels (see distReleaseSec): the
+         Distance SETTING for the tracking modes, the user's
+         manual distance to the look point for Overview (passed
+         as relDist). */
+      var relSec = distReleaseSec((relDist != null && isFinite(relDist)) ? relDist : camDistWorld());
       var relStep = Math.exp(-(CAM_PATH_DT / Math.max(0.25, state.speed)) / relSec);
       var i, i3;
       var mag = new Float64Array(n);
@@ -14460,7 +14707,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
           boxBlurAxis(A, n, 0, r); boxBlurAxis(A, n, 1, r); boxBlurAxis(A, n, 2, r);
         }
       }
-      var distSet = state.camDist * camAspectDistScale();
+      var distSet = camDistWorld() * camAspectDistScale();
       var pitchRad = state.camPitch * Math.PI / 180;
       var tanV = Math.tan(effectiveCamFovDeg() * Math.PI / 360);
       var ctx = {
@@ -14589,7 +14836,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
              Inside that zone no correction fires at all.
              The tracking contexts set no safeTop / safeBot
              and keep the symmetric 0.88 / 0.84 standard. */
-      var distSet = state.camDist * camAspectDistScale();
+      var distSet = camDistWorld() * camAspectDistScale();
       var ovDist = manualCam.init ? manualCam.pos.distanceTo(manualCam.look) : distSet;
       return Object.assign({}, ctx, {
         dist: Math.max(5, ovDist),
@@ -15207,25 +15454,26 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       var posAhead = projectFn(ahead);
       if (posAhead.distanceToSquared(pos) > 1e-6) vis.plane.lookAt(posAhead);
       vis.label.position.copy(pos);
-      /* Keep the label a constant on-screen size regardless of
-         camera distance AND lens: the world size grows with the
-         distance (as before) and with tan(fov / 2), so when the
-         camera path zooms IN — a narrower lens, everything on
-         screen bigger — the label's world size shrinks by the
-         same factor and its screen size does not change. The
-         reference is the set lens, so at the set FOV the size
-         is exactly what it has always been. */
-      var dCam = camera.position.distanceTo(pos);
-      var lf = Math.max(0.12, dCam * 0.0056)
-        * (Math.tan(camera.fov * Math.PI / 360) / Math.tan(effectiveCamFovDeg() * Math.PI / 360));
-      /* The aircraft symbol grows with camera distance too (like the
-         label): the portrait compensation and Overview pull the
-         camera back, and an unscaled world-size cone would shrink
-         to a speck exactly where the framing got wider. */
-      if (vis.plane) vis.plane.scale.setScalar((vis.plane.userData.baseScale || 1) * Math.max(0.85, Math.min(2.6, dCam / 60)));
-      if (vis.label.userData.baseScale)
-        vis.label.scale.set(vis.label.userData.baseScale.x * lf, vis.label.userData.baseScale.y * lf, 1);
-      vis.label.position.y += labelLift * Math.max(0.35, lf);
+      vis._labelLift = labelLift;
+      /* The label's SIZE is not set here: it is a constant
+         ON-SCREEN size, recomputed every frame AFTER the camera
+         rig has settled (see updateLabelScreenSizes, called just
+         before the render). Sizing it here used the PREVIOUS
+         frame's camera, measured the plain camera-to-aircraft
+         distance instead of the view depth the projection
+         actually divides by, normalised the lens against the
+         SET FOV (so changing the FOV setting itself resized the
+         text), and floored the factor at 0.12 (so closing in
+         with a small Camera Distance blew the label up several
+         times over). */
+      /* The aircraft symbol does NOT grow with camera distance:
+         its size is fixed in the 3D space (on the local chart,
+         in real metres on the map — see PLANE_LEN_M), so it is
+         simply set to its constant base scale every frame. (It
+         used to be scaled by the camera distance, which made
+         the same aircraft a different size on the map whenever
+         the framing changed.) */
+      if (vis.plane) vis.plane.scale.setScalar(vis.plane.userData.baseScale || 1);
       var isNow = phaseInfo.phase === 'now';
       vis.plane.visible = isNow;
       vis.label.visible = isNow && state.showLabels;
@@ -15239,6 +15487,52 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       if (!tr){ vis.trailLine.geometry.setDrawRange(0, 0); }
       else { vis.trailLine.geometry.setDrawRange(tubeRangeStart(tr.start), tubeRangeCount(tr.start, tr.head)); vis.trailLine.material.opacity = 1; }
       return cur;
+    }
+
+    /* ---- Callsign label: CONSTANT ON-SCREEN SIZE ----
+       Runs once per frame AFTER the camera rig has settled and
+       just before the render, so it reads THIS frame's camera —
+       position, view direction and lens — never last frame's.
+       A THREE.Sprite projects to a screen height fraction of
+       worldHeight / (2 * depth * tan(fov / 2)), where depth is
+       the view-space depth (distance along the camera's forward
+       axis), NOT the plain distance to the camera. Setting
+       worldHeight = base * depth * tan(fov / 2) * K makes the
+       fraction base * K / 2 at every distance, every lens (the
+       FOV setting AND the camera paths' zoom channel) and every
+       aspect: the callsign's on-screen size never changes.
+       K is anchored so the size equals what the label has always
+       been at the app's default lens (FOV 30 in the default 9:16
+       frame, i.e. a 62° effective vertical FOV): there the old
+       code's factor was depth * 0.0056, so K = 0.0056 / tan(31°)
+       and the pill's screen height is ~2.05% of the frame height.
+       The lift above the aircraft scales by the same factor
+       (x1.8, reproducing the historical ~2.1 world-unit gap at
+       the SAMPLE's home framing), so the label also keeps a
+       constant on-screen offset from the aircraft. There is NO
+       floor or cap on the factor: a floor is exactly what used
+       to blow the label up several times over when the camera
+       closed in (small Camera Distance, Free-mode close-ups). */
+    var LABEL_SCREEN_K = 0.0056 / Math.tan(31 * Math.PI / 180);
+    var _labelFwd = new THREE.Vector3(), _labelRel = new THREE.Vector3();
+    function updateLabelScreenSizes(){
+      if (!camera) return;
+      camera.getWorldDirection(_labelFwd);
+      var tanHalf = Math.tan(camera.fov * Math.PI / 360);
+      for (var i = 0; i < flights.length; i++){
+        if (!flights[i].visible) continue;
+        var vis = flights[i].localVis;
+        if (!vis || !vis.label || !vis.label.visible || !vis.plane) continue;
+        var base = vis.label.userData.baseScale;
+        if (!base) continue;
+        _labelRel.copy(vis.plane.position).sub(camera.position);
+        var depth = Math.max(0.05, _labelRel.dot(_labelFwd));
+        var sf = depth * tanHalf * LABEL_SCREEN_K;
+        vis.label.scale.set(base.x * sf, base.y * sf, 1);
+        vis.label.position.set(vis.plane.position.x,
+          vis.plane.position.y + (vis._labelLift || 6) * sf * 1.8,
+          vis.plane.position.z);
+      }
     }
 
     function updateHud(fl, cur){
@@ -15497,7 +15791,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
             /* Portrait compensation: pull back by camAspectDistScale
                (1 in 16:9) so the horizontal room around the aircraft
                matches landscape at the same Camera Distance setting. */
-            var dist = state.camDist * camAspectDistScale();
+            var dist = camDistWorld() * camAspectDistScale();
             /* How far the smoothed target still lags the REAL aircraft,
                in units of the camera distance. A big value means the
                track just jumped (flight change / large position jump).
@@ -15609,6 +15903,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
           bcEls.time.textContent = '--:--:--'; bcEls.date.textContent = '----/--/--';
           bcEls.alt.textContent = '----- ft'; bcEls.spd.textContent = '---- kt';
         }
+        updateLabelScreenSizes();   /* callsign labels: constant on-screen size, from THIS frame's settled camera */
         renderer.render(scene, camera);
         /* Screen recording only: draw the Clock HUD inside the
            canvas (one small GPU quad, texture refreshed at most
