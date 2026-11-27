@@ -7656,7 +7656,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
     var renderer, scene, camera, controls, globeGroup, localGroup;
     var softDotTex = null;
     var ambLight = null, sunLight = null, starMat = null;
-    var skyCur = new THREE.Color(0x04070d);
+    var skyCur = new THREE.Color(0x7fb0dc);
     var camTransT = 0;
     var activeChartMat = null, activeChartMesh = null;
     var localGround = null, localGrid = null, localGroundMat = null;
@@ -9543,8 +9543,8 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
             each edge at NDC ±0.9, bottom to the frame edge,
             top at NDC +0.6 under the HUD); and
             the camera PITCH — the view's depression angle, 0°
-            looking level to 40° looking down — sits within
-            0–40°. A home breaking either is rejected.
+            looking level to 30° looking down — sits within
+            0–30°. A home breaking either is rejected.
          1. Minimise the MEAN camera–aircraft distance along
             the trajectory — the top priority: on average as
             close to the aircraft as possible, not the far
@@ -9591,7 +9591,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
        aim points — the trajectory centroid (where the aircraft
        spends its time) and the route bounds centre at the mean
        flight altitude — × elevations 20°–72.5° in 7.5° steps
-       (elevations above 40° are skipped unread: a grid
+       (elevations above 30° are skipped unread: a grid
        candidate's pitch is its elevation, so the pitch hard
        constraint already rejects them).
        For each, the smallest statically fitting distance is
@@ -9648,7 +9648,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       function grade(cand){
         /* HARD CONSTRAINT — the camera pitch (the view's
            depression angle: 0° = looking level, positive =
-           looking down) must sit within 0–40°. A candidate
+           looking down) must sit within 0–30°. A candidate
            outside it is rejected outright, exactly like a
            candidate whose trajectory breaks the in-frame
            constraint below. Computed from the candidate's own
@@ -9656,7 +9656,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
            pose included. */
         var pitchDeg = Math.atan2(cand.pos[1] - cand.look[1],
           Math.hypot(cand.pos[0] - cand.look[0], cand.pos[2] - cand.look[2])) * 180 / Math.PI;
-        if (!(pitchDeg >= 0 && pitchDeg <= 40)) return null;
+        if (!(pitchDeg >= 0 && pitchDeg <= 30)) return null;
         var savedPos = [manualCam.pos.x, manualCam.pos.y, manualCam.pos.z];
         var savedLook = [manualCam.look.x, manualCam.look.y, manualCam.look.z];
         var savedInit = manualCam.init;
@@ -9739,10 +9739,10 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
             var c = centers[Math.floor(combo / elevs.length)], e = elevs[combo % elevs.length];
             combo++;
             /* A grid candidate's pitch IS its elevation, so
-               elevations above 40° are rejected by the pitch
+               elevations above 30° are rejected by the pitch
                hard constraint (see grade) without spending a
                fit on them. */
-            if (e > 40) return false;
+            if (e > 30) return false;
             var rad = e * Math.PI / 180, sinE = Math.sin(rad), cosE = Math.cos(rad);
             var D = 24;
             while (D <= 6000 && !fitsAll(c[0], c[1], c[2], D, sinE, cosE)) D *= 1.07;
@@ -9769,7 +9769,20 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
           return false;
         }
         if (!graded.length){
-          var fb = cands[0];
+          /* The stage-1 winner is the fallback — but the pitch
+             hard constraint still applies to it: take the first
+             statically fitting home (best static mean distance
+             first) whose pitch sits within 0–30°, and only when
+             no home qualifies at all (no grid home fit) fall
+             back to the unconstrained winner as before. */
+          var fb = null;
+          for (var fi = 0; fi < cands.length; fi++){
+            var fc = cands[fi];
+            var fp = Math.atan2(fc.pos[1] - fc.look[1],
+              Math.hypot(fc.pos[0] - fc.look[0], fc.pos[2] - fc.look[2])) * 180 / Math.PI;
+            if (fp >= 0 && fp <= 30){ fb = fc; break; }
+          }
+          if (!fb) fb = cands[0];
           job.result = { pos: fb.pos, look: fb.look };
           return true;
         }
@@ -15265,48 +15278,22 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       lastHud.color = fl.colorCss;
     }
 
-    /* ---------------- Sky by local time ----------------
-       The sky follows the flight: local solar time is estimated from
-       the current point (UTC timestamp + longitude / 15). Colors, fog,
-       light levels and star visibility ease toward the target every
-       frame, so dawn/day/dusk/night blend gradually during playback
-       (and in recordings). */
-    var SKY_STOPS = [
-      /* hour, bg, sun, ambient, stars, exposure */
-      [0.0,  '#030612', 0.35, 0.50, 0.80, 0.95],
-      [4.8,  '#040818', 0.35, 0.52, 0.78, 0.95],
-      [6.3,  '#27355a', 0.70, 0.66, 0.35, 1.00],
-      [7.8,  '#5d84ad', 1.15, 0.85, 0.08, 1.06],
-      [12.0, '#7fb0dc', 1.65, 1.00, 0.03, 1.10],
-      [16.0, '#6f9fcb', 1.45, 0.95, 0.05, 1.08],
-      [17.8, '#4b5f85', 1.00, 0.78, 0.22, 1.03],
-      [19.2, '#182742', 0.55, 0.60, 0.60, 0.98],
-      [20.8, '#040818', 0.35, 0.52, 0.78, 0.95],
-      [24.0, '#030612', 0.35, 0.50, 0.80, 0.95]
-    ];
-    var skyTarget = new THREE.Color(0x04070d);
-    var skySun = 1.6, skyAmb = 0.9, skyStars = 0.7, skyExp = 1.05;
+    /* ---------------- Sky (fixed brightness) ----------------
+       The sky used to follow the flight's local solar time
+       (estimated from the current point's UTC timestamp +
+       longitude / 15), darkening at night and brightening by
+       day. That feature is abolished: the sky colour, fog,
+       light levels, star visibility and exposure are one fixed
+       midday state at all times, so the brightness never
+       changes with the flight's local time — not during
+       playback, and not in recordings. */
+    var skyTarget = new THREE.Color(0x7fb0dc);
+    var skySun = 1.65, skyAmb = 1.00, skyStars = 0.03, skyExp = 1.10;
     function updateSky(dt, sample){
-      var hour = 12;
-      if (sample && sample.t != null && isFinite(sample.t)){
-        hour = (((sample.t / 3600) % 24) + sample.lon / 15) % 24;
-        if (hour < 0) hour += 24;
-      } else if (lastPos){
-        hour = 12;
-      }
-      var a = SKY_STOPS[0], b = SKY_STOPS[SKY_STOPS.length - 1];
-      for (var i = 0; i < SKY_STOPS.length - 1; i++){
-        if (hour >= SKY_STOPS[i][0] && hour <= SKY_STOPS[i + 1][0]){ a = SKY_STOPS[i]; b = SKY_STOPS[i + 1]; break; }
-      }
-      var f = (b[0] > a[0]) ? (hour - a[0]) / (b[0] - a[0]) : 0;
-      f = Math.max(0, Math.min(1, f));
-      skyTarget.set(a[1]).lerp(new THREE.Color(b[1]), f);
-      var tSun = a[2] + (b[2] - a[2]) * f, tAmb = a[3] + (b[3] - a[3]) * f;
-      var tStars = a[4] + (b[4] - a[4]) * f, tExp = a[5] + (b[5] - a[5]) * f;
-      var k = 1 - Math.exp(-dt / 2.2);
-      skyCur.lerp(skyTarget, k);
-      skySun += (tSun - skySun) * k; skyAmb += (tAmb - skyAmb) * k;
-      skyStars += (tStars - skyStars) * k; skyExp += (tExp - skyExp) * k;
+      /* Fixed state: no time-of-day computation at all — the
+         same values are applied every frame. (dt and sample are
+         accepted only so the call site is unchanged.) */
+      skyCur.copy(skyTarget);
       if (scene && scene.fog){
         scene.fog.color.copy(skyCur);
         scene.fog.near = 320; scene.fog.far = 1500;
