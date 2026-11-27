@@ -592,8 +592,8 @@
         </div>
       </div>
       <div class="ctl" data-tip-title="Trail Thickness" data-tip="Trail width. ↓ thinner. ↑ thicker.">
-        <label for="trailWidth">Trail Thickness <span class="val" id="trailWidthVal">5.0</span></label>
-        <input type="range" id="trailWidth" min="0.5" max="10" step="0.5" value="5" />
+        <label for="trailWidth">Trail Thickness <span class="val" id="trailWidthVal">2.5</span></label>
+        <input type="range" id="trailWidth" min="0.5" max="10" step="0.5" value="2.5" />
       </div>
       <div class="ctl">
         <label for="globalColor">Trail &amp; Aircraft Color (All Flights) <span class="val" id="globalColorVal">#ff0000</span></label>
@@ -7630,7 +7630,7 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       globalColor: '#ff0000',
       altScale: 5,
       trailHours: 1,
-      trailWidth: 5,
+      trailWidth: 2.5,
       fullRouteWidth: 2,
       fullRouteOpacity: 0.5,
       fullRouteColor: '#0000ff',
@@ -10496,12 +10496,12 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
       applyTrailWidth();
     });
     /* Startup sync: the shown default must be state.trailWidth
-       (5), whatever the control itself was left holding. Browsers
+       (2.5), whatever the control itself was left holding. Browsers
        restore form control values across sessions / navigation
-       without firing 'input', so a slider last touched under the
-       old 2.5 default could sit at 2.5 on screen while the state
-       already said 5 — write the state default into the control
-       and its readout once, here at startup. */
+       without firing 'input', so a slider last touched under a
+       previous default could sit at that old value on screen while
+       the state already said 2.5 — write the state default into the
+       control and its readout once, here at startup. */
     if (trailWidthEl){
       trailWidthEl.value = String(state.trailWidth);
       document.getElementById('trailWidthVal').textContent = state.trailWidth.toFixed(1);
