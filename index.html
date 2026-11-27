@@ -14602,6 +14602,104 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
                topdown: resampleCamPath(buildOneCamPath('topdown', tr.P, tr.A, tr.n, tr.total, tr.ctx), tr.total, tr.ctx, projectAlongTD, true),
                overview: resampleCamPath(buildOneCamPath('overview', tr.P, tr.A, tr.n, tr.total, ovCtx), tr.total, ovCtx, projectAlong, false) };
     }
+    /* Small-reversal absorption on a log-space channel: a
+       direction reversal whose whole excursion stays below
+       thresh is a wiggle, not a move, and is clipped away at
+       its shoulders — a peak that rises less than thresh above
+       the HIGHER of its two neighbouring valleys is capped at
+       that valley's level, and a valley that dips less than
+       thresh below the LOWER of its two neighbouring peaks is
+       floored at that peak's level — so a little zoom-in
+       immediately followed by a little zoom-out (or the
+       reverse) never ships: the channel simply holds the
+       shoulder level through it. The clip touches only the
+       contiguous overshoot region around the extremum (the
+       samples beyond the shoulder level), so everything else —
+       above all a MONOTONE stretch, which contains no interior
+       extremum at all — passes exactly as it was, at whatever
+       pace it had: a sustained zoom-in or zoom-out is never
+       reshaped. An overshoot region wider than
+       OVIEW_RENDER_WIGGLE_MAX samples is a framing phase, not
+       a wiggle (a shallow but long-held zoom is a real move),
+       and is likewise left alone. Plateau-tolerant (a flat
+       stretch registers as one extremum), and iterated —
+       clipping one extremum can expose a slightly larger one
+       around it, which the next scan then judges on its own
+       amplitude; recorded clip guards keep a later clip from
+       undoing an earlier one, so the scans converge. Returns
+       true when anything moved. */
+    var OVIEW_RENDER_WIGGLE_MAX = 90; /* samples (= wall frames on the render grid): the widest overshoot still absorbed as a wiggle */
+    function absorbSmallLogReversals(x, n, thresh){
+      var changed = false;
+      /* Clip guards: a region floored up to a level records
+         that level as its floor, and a capped region its cap;
+         a later clip that would cross a recorded guard (a cap
+         below a floor this function set, a floor above a cap)
+         is skipped — clips never undo each other, so the scans
+         converge instead of chasing their own tail (a floored
+         plateau must not be re-read as a peak and capped back
+         down). */
+      var loG = new Float32Array(n), hiG = new Float32Array(n);
+      for (var gi = 0; gi < n; gi++){ loG[gi] = -Infinity; hiG[gi] = Infinity; }
+      for (var iter = 0; iter < 1000; iter++){
+        var ext = [0];
+        var dir = 0, ex = 0, i;
+        for (i = 1; i < n; i++){
+          if (dir === 0){
+            var d0 = x[i] - x[ex];
+            if (d0 > 1e-12){ dir = 1; ex = i; }
+            else if (d0 < -1e-12){ dir = -1; ex = i; }
+          } else if (dir === 1){
+            if (x[i] > x[ex]) ex = i;
+            else if (x[i] < x[ex] - 1e-12){ ext.push(ex); dir = -1; ex = i; }
+          } else {
+            if (x[i] < x[ex]) ex = i;
+            else if (x[i] > x[ex] + 1e-12){ ext.push(ex); dir = 1; ex = i; }
+          }
+        }
+        if (ex !== ext[ext.length - 1]) ext.push(ex);
+        if (ext[ext.length - 1] !== n - 1) ext.push(n - 1);
+        if (ext.length < 3) break;
+        var did = false;
+        /* Valleys are clipped before peaks in every scan: on
+           the lens channel a floor RAISES the value (wider —
+           always fit-safe), while a cap lowers it, so a wiggle
+           that can be absorbed either way is absorbed upward. */
+        for (var pass = 0; pass < 2 && !did; pass++){
+          for (var e = 1; e + 1 < ext.length; e++){
+            var a = ext[e - 1], b = ext[e + 1], mm = ext[e];
+            var xa = x[a], xb = x[b], xm = x[mm], lvl, L, R, k2;
+            if (xm <= xa && xm <= xb){ /* a valley: floor it at the lower shoulder */
+              if (pass !== 0) continue;
+              lvl = Math.min(xa, xb);
+              if (xm >= lvl || lvl - xm >= thresh) continue;
+              L = mm; while (L > 0 && x[L - 1] < lvl) L--;
+              R = mm; while (R < n - 1 && x[R + 1] < lvl) R++;
+              if (R - L > OVIEW_RENDER_WIGGLE_MAX) continue;
+              var blockedV = false;
+              for (k2 = L; k2 <= R; k2++) if (hiG[k2] < lvl){ blockedV = true; break; }
+              if (blockedV) continue;
+              for (k2 = L; k2 <= R; k2++){ x[k2] = lvl; if (lvl > loG[k2]) loG[k2] = lvl; }
+            } else if (xm >= xa && xm >= xb){ /* a peak: cap it at the higher shoulder */
+              if (pass !== 1) continue;
+              lvl = Math.max(xa, xb);
+              if (xm <= lvl || xm - lvl >= thresh) continue;
+              L = mm; while (L > 0 && x[L - 1] > lvl) L--;
+              R = mm; while (R < n - 1 && x[R + 1] > lvl) R++;
+              if (R - L > OVIEW_RENDER_WIGGLE_MAX) continue;
+              var blockedP = false;
+              for (k2 = L; k2 <= R; k2++) if (loG[k2] > lvl){ blockedP = true; break; }
+              if (blockedP) continue;
+              for (k2 = L; k2 <= R; k2++){ x[k2] = lvl; if (lvl < hiG[k2]) hiG[k2] = lvl; }
+            } else continue;
+            did = true; changed = true;
+            break; /* rescan: the clip changed the extrema around it */
+          }
+        }
+        if (!did) break;
+      }
+      return changed;
+    }
     /* Render resample — the flicker countermeasure. The optimized
        path lives on the 2 s timeline (CSV-time) grid, but at high
        playback speeds one wall-clock frame spans many samples, so
@@ -14890,6 +14988,104 @@ Timestamp,UTC,Callsign,Position,Altitude,Speed,Direction
           if (!committed){
             rp[k3b] = sv0[0]; rp[k3b + 1] = sv0[1]; rp[k3b + 2] = sv0[2];
             rp[j3b] = sv1[0]; rp[j3b + 1] = sv1[1]; rp[j3b + 2] = sv1[2];
+          }
+        }
+      }
+      /* FINAL DE-PERTURBATION (Overview only) — the last word
+         on the RENDER path, and the stage the repairs above
+         make necessary. Every filter the lens and the pan went
+         through (smoothing, stabilization, the predictive
+         envelope, the edge latch) ran on the OPTIMIZED path;
+         the repair passes above then re-shaped this render
+         path sample by sample — a failing sample's framing was
+         replaced wholesale by the optimized path's own, and
+         its lens widened in discrete x1.18 steps — so adjacent
+         render samples alternate between frame-averaged values
+         and raw, step-quantized ones. Played one sample per
+         wall frame, that alternation IS the remaining defect:
+         the lens steps and reverses a little in and out around
+         its trend (the zoom perturbation), and the position /
+         look alternation shakes the whole frame at frame rate
+         (the flicker). This stage removes the alternation from
+         the path that actually plays:
+           - the lens, in log-tan space, first has its SMALL
+             REVERSALS absorbed (see absorbSmallLogReversals):
+             an in-out or out-in pair whose whole excursion is
+             under the repair quantum (x1.18) is clipped away
+             at its shoulders, while a monotone zoom — however
+             long, however paced — has no interior extremum
+             and passes untouched;
+           - a zero-phase low-pass (two box passes, radius 2 —
+             a render sample is one wall frame, so this reaches
+             ≈2 frames) then takes the remaining sample-scale
+             steps out of the lens: a step becomes a short ramp,
+             a frame-rate alternation cancels;
+           - the position / look channels get the same
+             treatment at radius 1, which is what stops the
+             whole-screen shimmer: their repair-scale
+             alternation is averaged out, while their real
+             motion (spanning many frames) is untouched.
+         The result is then re-verified against the real
+         aircraft at every sample and midpoint, exactly as the
+         repairs above verified theirs, and any framing the
+         smoothing left outside the margins is repaired by
+         WIDENING ONLY — the needed raise is added to the lens
+         in small log steps, spread over the neighbouring
+         samples with a triangular falloff, so the repair
+         itself is a smooth hill and never a new step (widening
+         can only shrink a projection, so a raise never un-fits
+         a neighbour or a midpoint). A sample that still does
+         not fit at the lens cap keeps the exact framing the
+         repair passes above shipped for it — the guarantee's
+         escape hatch, unchanged — and a midpoint left failing
+         by such a restore is widened home in small steps. */
+      if (!td && ctx.ovValve && m > 4){
+        var spO = new Float32Array(rp), slO = new Float32Array(rl), sfO = new Float32Array(rf);
+        var ltO = new Float32Array(m);
+        var ltCapO = Math.log(Math.tan(fovCap * Math.PI / 360));
+        for (k = 0; k < m; k++) ltO[k] = Math.log(Math.tan(rf[k] * Math.PI / 360));
+        absorbSmallLogReversals(ltO, m, Math.log(1.18));
+        boxBlurPlain(ltO, m, 2); boxBlurPlain(ltO, m, 2);
+        for (k = 0; k < m; k++) rf[k] = 2 * Math.atan(Math.exp(ltO[k])) * 180 / Math.PI;
+        for (var axO = 0; axO < 3; axO++){
+          boxBlurAxis(rp, m, axO, 1); boxBlurAxis(rp, m, axO, 1);
+          boxBlurAxis(rl, m, axO, 1); boxBlurAxis(rl, m, axO, 1);
+        }
+        var bumpWO = [0.25, 0.5, 1, 0.5, 0.25];
+        function ltBumpO(idx, amt){
+          for (var oO = -2; oO <= 2; oO++){
+            var jO = idx + oO;
+            if (jO < 0 || jO >= m) continue;
+            var nvO = ltO[jO] + amt * bumpWO[oO + 2];
+            ltO[jO] = nvO > ltCapO ? ltCapO : nvO;
+          }
+        }
+        function ltSyncO(){
+          for (var qO = 0; qO < m; qO++) rf[qO] = 2 * Math.atan(Math.exp(ltO[qO])) * 180 / Math.PI;
+        }
+        for (var bpO = 0; bpO < 8; bpO++){
+          var anyFO = false;
+          for (k = 0; k < m; k++) if (!renderSampleFits(k)){ ltBumpO(k, Math.log(1.06)); anyFO = true; }
+          if (anyFO) ltSyncO();
+          var anyMO = false;
+          for (k = 0; k < m - 1; k++) if (!renderMidFits(k)){ ltBumpO(k, Math.log(1.06)); ltBumpO(k + 1, Math.log(1.06)); anyMO = true; }
+          if (anyMO) ltSyncO();
+          if (!anyFO && !anyMO) break;
+        }
+        for (k = 0; k < m; k++){
+          if (!renderSampleFits(k)){
+            var k3O = k * 3;
+            rp[k3O] = spO[k3O]; rp[k3O + 1] = spO[k3O + 1]; rp[k3O + 2] = spO[k3O + 2];
+            rl[k3O] = slO[k3O]; rl[k3O + 1] = slO[k3O + 1]; rl[k3O + 2] = slO[k3O + 2];
+            rf[k] = sfO[k];
+          }
+        }
+        for (k = 0; k < m - 1; k++){
+          var gO = 0;
+          while (!renderMidFits(k) && gO++ < 10){
+            if (rf[k] < fovCap) rf[k] = Math.min(fovCap, 2 * Math.atan(Math.tan(rf[k] * Math.PI / 360) * 1.06) * 180 / Math.PI);
+            if (rf[k + 1] < fovCap) rf[k + 1] = Math.min(fovCap, 2 * Math.atan(Math.tan(rf[k + 1] * Math.PI / 360) * 1.06) * 180 / Math.PI);
+            if (rf[k] >= fovCap && rf[k + 1] >= fovCap) break;
           }
         }
       }
